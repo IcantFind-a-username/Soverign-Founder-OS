@@ -69,9 +69,12 @@ README.md ───────────── Entry & quick overview
             └── 04 界面设计
 ```
 
-## RFCs (Planned)
+## RFCs
 
-Architectural decision records will live in `rfcs/` as the implementation begins.
+| RFC | Status | Description |
+| --- | --- | --- |
+| [0001 — Canonical Task Contract](../rfcs/0001-canonical-task-contract.md) | Draft | Stable task and execution envelope |
+| [0002 — WASM Sandbox and Plugin Capabilities](../rfcs/0002-wasm-sandbox-and-plugin-capabilities.md) | Draft | Default-deny plugin isolation and authority model |
 
 ## Security Artifacts (Planned)
 

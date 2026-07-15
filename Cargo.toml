@@ -15,6 +15,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.97"
 license = "Apache-2.0"
 repository = "https://github.com/IcantFind-a-username/Soverign-Founder-OS"
 
@@ -40,6 +41,7 @@ aes-gcm = "0.10"
 base64 = "0.22"
 dirs = "5"
 clap = { version = "4", features = ["derive"] }
+wasmtime = { version = "=46.0.1", default-features = false, features = ["cranelift", "runtime", "std"] }
 
 [profile.release]
 lto = true

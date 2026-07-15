@@ -115,9 +115,10 @@ fn red_data_cannot_reach_cloud_tools_even_with_a_self_issued_token() {
     let mut sandbox = SandboxExecutor::new(
         vec!["cloud.model.infer".into()],
         trusted_issuer.public_key_b64(),
-    );
+    )
+    .unwrap();
     let error = sandbox
-        .execute(ExecutionRequest {
+        .execute_simulated(ExecutionRequest {
             token: &forged_token,
             venture_id: "ven_alpha",
             actor_id: "agent_researcher",

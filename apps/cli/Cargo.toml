@@ -3,6 +3,7 @@ name = "sovereign-cli"
 description = "CLI for Sovereign Agent Runtime"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 

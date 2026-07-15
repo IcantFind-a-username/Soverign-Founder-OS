@@ -1,7 +1,7 @@
 # Sovereign Founder OS
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Stage](https://img.shields.io/badge/Stage-0%20Constitution-lightgrey)](ROADMAP.md)
+[![Stage](https://img.shields.io/badge/Stage-1%20Secure%20Kernel-orange)](ROADMAP.md)
 
 > **Your company. Your data. Your keys.**
 > **Many models. No master. No single point of failure.**
@@ -96,7 +96,7 @@ crates/
   policy/         deterministic permission engine
   capability/     short-lived execution tokens
   vault/          local encrypted storage
-  sandbox/        isolated tool execution (stub)
+  sandbox/        default-deny Wasmtime isolation (Phase A)
 apps/
   cli/            sovereign CLI
 ```
@@ -106,8 +106,11 @@ Run locally:
 ```bash
 cargo test --workspace
 cargo run -p sovereign-cli -- init
+cargo run -p sovereign-cli -- sandbox-check
 cargo run -p sovereign-cli -- demo
 ```
+
+The isolated path currently permits import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. `sandbox-check` is a mechanical Phase A check using an ephemeral test issuer—not a production trust anchor. Artifact compilation is still in-process and is not covered by guest fuel or Store limits. The effectful tool step in `demo` remains explicitly labelled as a simulation until signed manifests, exact invocation binding, bounded compilation workers, durable authorization, and audited host interfaces are implemented. See [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
 
 See [ROADMAP.md](ROADMAP.md) for the full development plan.
 

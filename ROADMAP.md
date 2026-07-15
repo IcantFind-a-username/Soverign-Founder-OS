@@ -42,10 +42,16 @@ Secure Agent Runtime
 - [x] Device identity and signing (`crates/identity`)
 - [x] Deterministic Policy Engine (`crates/policy`)
 - [x] Capability Token issuer/validator (`crates/capability`)
-- [x] Sandboxed tool executor — MVP stub (`crates/sandbox`)
+- [x] Sandboxed tool executor — capability-gated prototype (`crates/sandbox`)
 - [x] Append-only signed audit ledger (`crates/audit-ledger`)
 - [ ] WASM/container isolation for sandbox
+  - [x] Phase A: import-free Wasmtime mechanics with guest execution ceilings (non-production)
+  - [ ] Phase B: signed artifacts, exact invocation binding, Capability V2
+  - [ ] Phase C: durable authorization and crash-safe evidence
+  - [ ] Phase D: reviewed WIT host interfaces and high-risk backend
 - [ ] Adversarial integration tests
+  - [x] Phase A: malicious Wasm import, loop, memory, table, ABI, and state tests
+  - [ ] Full Stage 1 authorization, replay, audit, and backend downgrade suite
 
 **Exit criteria:** A malicious agent cannot read files or execute external actions without authorization.
 

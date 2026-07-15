@@ -4,9 +4,18 @@ use sovereign_capability::{CapabilityIssuer, IssueOptions};
 use sovereign_contracts::{ActionRequest, AutomationLevel, DataClass};
 use sovereign_identity::DeviceIdentity;
 use sovereign_policy::PolicyEngine;
-use sovereign_sandbox::{ExecutionRequest, SandboxExecutor};
+use sovereign_sandbox::{ExecutionRequest, SandboxExecutor, WasmExecutionRequest};
 use sovereign_vault::Vault;
 use std::path::PathBuf;
+
+// Equivalent WAT:
+// (module (func (export "sovereign_run") (result i32) i32.const 7))
+// Keeping this tiny fixture as bytes avoids shipping a text-to-Wasm compiler in the CLI.
+const SANDBOX_CHECK_MODULE: &[u8] = &[
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f, 0x03,
+    0x02, 0x01, 0x00, 0x07, 0x11, 0x01, 0x0d, 0x73, 0x6f, 0x76, 0x65, 0x72, 0x65, 0x69, 0x67, 0x6e,
+    0x5f, 0x72, 0x75, 0x6e, 0x00, 0x00, 0x0a, 0x06, 0x01, 0x04, 0x00, 0x41, 0x07, 0x0b,
+];
 
 #[derive(Parser)]
 #[command(name = "sovereign", about = "Sovereign Agent Runtime CLI", version)]
@@ -19,8 +28,10 @@ struct Cli {
 enum Commands {
     /// Initialize local device identity, vault, and ledger
     Init,
-    /// Run the secure kernel demo workflow
+    /// Run the secure kernel demo workflow (effectful tools remain simulated)
     Demo,
+    /// Run a mechanical check of the import-free Phase A Wasmtime path
+    SandboxCheck,
     /// Show vault entry names
     Status,
 }
@@ -36,8 +47,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Init => cmd_init()?,
         Commands::Demo => cmd_demo()?,
+        Commands::SandboxCheck => cmd_sandbox_check()?,
         Commands::Status => cmd_status()?,
     }
+    Ok(())
+}
+
+fn cmd_sandbox_check() -> Result<(), Box<dyn std::error::Error>> {
+    let policy = PolicyEngine::new();
+    let decision = policy.evaluate(ActionRequest {
+        actor_id: "runtime_self_check".into(),
+        venture_id: "system".into(),
+        tool: "sandbox".into(),
+        operation: "runtime_check".into(),
+        resource: "runtime:wasmtime".into(),
+        data_class: DataClass::Green,
+        automation_level: AutomationLevel::L1Draft,
+    });
+    let issuer = CapabilityIssuer::new();
+    let token = issuer.issue(&decision, IssueOptions::default(), false)?;
+    let mut sandbox = SandboxExecutor::new(
+        vec!["sandbox.runtime_check".into()],
+        issuer.public_key_b64(),
+    )?;
+    let result = sandbox.execute_wasm(WasmExecutionRequest {
+        token: &token,
+        venture_id: "system",
+        actor_id: "runtime_self_check",
+        tool: "sandbox",
+        operation: "runtime_check",
+        resource: "runtime:wasmtime",
+        module: SANDBOX_CHECK_MODULE,
+    })?;
+
+    if result.exit_code != 7 || !result.runtime.is_isolated() {
+        return Err("isolated runtime self-check returned an unexpected result".into());
+    }
+
+    println!("self-check capability validation: OK");
+    println!("authority: ephemeral self-check issuer (not a production trust anchor)");
+    println!("runtime: {}", result.runtime.as_str());
+    println!(
+        "guest Wasm boundary active: {}",
+        result.runtime.is_isolated()
+    );
+    println!(
+        "production ready: {} (artifact binding and durable audit are pending)",
+        result.runtime.is_production_ready()
+    );
+    println!("host import policy: deny all");
+    println!("fuel consumed: {}", result.fuel_consumed);
+    println!("guest result: {}", result.exit_code);
     Ok(())
 }
 
@@ -126,8 +186,8 @@ fn cmd_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("token_id: {}", token.token_id);
     println!("expires_at: {}", token.expires_at);
 
-    let mut sandbox = SandboxExecutor::new(vec!["email.draft".into()], issuer.public_key_b64());
-    let result = sandbox.execute(ExecutionRequest {
+    let mut sandbox = SandboxExecutor::new(vec!["email.draft".into()], issuer.public_key_b64())?;
+    let result = sandbox.execute_simulated(ExecutionRequest {
         token: &token,
         venture_id: "ven_demo",
         actor_id: "agent_builder",
@@ -136,7 +196,7 @@ fn cmd_demo() -> Result<(), Box<dyn std::error::Error>> {
         resource: "customer:acme",
         input: serde_json::json!({"subject": "Proposal for Acme Ltd."}),
     })?;
-    println!("\n== Sandbox execution ==");
+    println!("\n== Simulated execution (not isolated) ==");
     println!("{}", serde_json::to_string_pretty(&result.output)?);
 
     let decision_hash = hash_bytes(&serde_json::to_vec(&decision)?);

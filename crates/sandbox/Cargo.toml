@@ -3,6 +3,7 @@ name = "sovereign-sandbox"
 description = "Sandboxed tool execution for Sovereign Agent Runtime"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
@@ -12,7 +13,9 @@ sovereign-contracts = { workspace = true }
 chrono = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+wasmtime = { workspace = true }
 
 [dev-dependencies]
 sovereign-policy = { workspace = true }
 uuid = { workspace = true }
+wat = "1"

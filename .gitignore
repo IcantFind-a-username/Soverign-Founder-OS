@@ -29,6 +29,3 @@ secrets/
 
 # Local notes (not for publication)
 notes/
-
-# Rust
-Cargo.lock
