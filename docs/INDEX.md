@@ -6,11 +6,22 @@ Complete documentation for Sovereign Founder OS. All design intent is public and
 
 English root docs for international contributors; complete Chinese blueprint in `docs/zh/`. See [LANGUAGE.md](LANGUAGE.md).
 
+## Document Roles
+
+| Document | Purpose |
+| --- | --- |
+| [MANIFESTO.md](../MANIFESTO.md) | Position, principles, and the future we want |
+| `WHITEPAPER.md` *(planned)* | Technical architecture, threat model, protocols, and supporting argument |
+| [`rfcs/`](../rfcs/) | One concrete design per RFC |
+| [ARCHITECTURE.md](../ARCHITECTURE.md) | Structure of the current implementation |
+| [THREAT_MODEL.md](../THREAT_MODEL.md) | Attackers, assets, trust boundaries, and defenses |
+
 ## Start Here
 
 | Document | Language | Description |
 | --- | --- | --- |
 | [README.md](../README.md) | EN + 中文 link | Project entry point |
+| [MANIFESTO.md](../MANIFESTO.md) | English | Sovereign Crew's position and non-negotiable principles |
 | [VISION.md](../VISION.md) | English | Product vision and principles |
 | [ROADMAP.md](../ROADMAP.md) | English | Development stages and milestones |
 | [docs/zh/README.md](zh/README.md) | 中文 | Complete design specifications |
@@ -55,7 +66,8 @@ See [zh/README.md](zh/README.md) for the Chinese documentation guide.
 ```text
 README.md ───────────── Entry & quick overview
     │
-    ├── VISION.md ───── What and why
+    ├── MANIFESTO.md ── Position and non-negotiable principles
+    ├── VISION.md ───── Product vision
     ├── ARCHITECTURE.md ─ How it works
     ├── THREAT_MODEL.md ─ What we defend against
     ├── PRIVACY_MODEL.md ─ How data is protected
@@ -70,6 +82,8 @@ README.md ───────────── Entry & quick overview
 ```
 
 ## RFCs
+
+Architectural decision records live in [`rfcs/`](../rfcs/). They specify individual designs and evolve through implementation and review.
 
 | RFC | Status | Description |
 | --- | --- | --- |

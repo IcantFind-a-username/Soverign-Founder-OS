@@ -17,7 +17,7 @@ You may use the project name to:
 
 - Refer to the project in truthful, non-misleading descriptions
 - Indicate that your software is based on or compatible with Sovereign Founder OS
-- Link to the official repository: https://github.com/IcantFind-a-username/Soverign-Founder-OS
+- Link to the official repository: https://github.com/IcantFind-a-username/Sovereign-Founder-OS
 
 ## Prohibited Uses
 

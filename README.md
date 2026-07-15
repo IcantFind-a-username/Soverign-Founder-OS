@@ -32,6 +32,8 @@ When a single AI provider, cloud vendor, or platform fails — or revokes access
 
 > We killed the model, the server and the plugin. **The company kept running.**
 
+Read **[The Sovereign Crew Manifesto →](MANIFESTO.md)** for the principles we will not compromise.
+
 ## How It Works
 
 Users describe what they want to achieve. The system handles the rest:
@@ -55,10 +57,15 @@ Users see **what to do next** — not agent parameters, token counts, or tool sc
 
 ## Documentation
 
+### Recommended Reading Path
+
+[README](README.md) → [MANIFESTO](MANIFESTO.md) → `WHITEPAPER` *(planned)* → [ARCHITECTURE](ARCHITECTURE.md) → [THREAT MODEL](THREAT_MODEL.md) → [RFCs](rfcs/) → [ROADMAP](ROADMAP.md) → `DEMO` *(planned)*
+
 ### Quick Start (English)
 
 | Document | Description |
 | --- | --- |
+| [MANIFESTO.md](MANIFESTO.md) | The Sovereign Crew position and non-negotiable principles |
 | [VISION.md](VISION.md) | Product vision and design principles |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Threat model v0.1 |
@@ -130,7 +137,7 @@ You are free to use, modify, and distribute this project under Apache 2.0 terms.
 
 ## Links
 
-- Repository: https://github.com/IcantFind-a-username/Soverign-Founder-OS
+- Repository: https://github.com/IcantFind-a-username/Sovereign-Founder-OS
 - Documentation index: [docs/INDEX.md](docs/INDEX.md)
 - Why not another agent?: [docs/why-not-another-agent.md](docs/why-not-another-agent.md)
 

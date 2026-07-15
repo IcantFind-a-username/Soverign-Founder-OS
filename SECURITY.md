@@ -8,7 +8,7 @@ If you discover a security vulnerability in Sovereign Founder OS, please report 
 
 ### How to Report
 
-1. Open a private security advisory via GitHub: [Security Advisories](https://github.com/IcantFind-a-username/Soverign-Founder-OS/security/advisories/new)
+1. Open a private security advisory via GitHub: [Security Advisories](https://github.com/IcantFind-a-username/Sovereign-Founder-OS/security/advisories/new)
 2. Or email the maintainers (contact to be published when advisory email is configured)
 
 Include:
