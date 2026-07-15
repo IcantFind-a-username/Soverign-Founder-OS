@@ -1,5 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
-use sovereign_contracts::{CapabilityToken, PolicyDecision};
+use sovereign_contracts::{CapabilityToken, CapabilityTokenBody, PolicyDecision};
+use sovereign_identity::DeviceIdentity;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -17,6 +18,16 @@ pub enum CapabilityError {
     ScopeMismatch,
     #[error("venture mismatch")]
     VentureMismatch,
+    #[error("actor mismatch")]
+    ActorMismatch,
+    #[error("token was not signed by the trusted issuer")]
+    UntrustedIssuer,
+    #[error("token signature is invalid")]
+    InvalidSignature,
+    #[error("token lifetime must be positive")]
+    InvalidLifetime,
+    #[error("token use limit must be positive")]
+    InvalidUseLimit,
 }
 
 #[derive(Debug, Clone)]
@@ -34,12 +45,20 @@ impl Default for IssueOptions {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct CapabilityIssuer;
+#[derive(Debug)]
+pub struct CapabilityIssuer {
+    identity: DeviceIdentity,
+}
 
 impl CapabilityIssuer {
     pub fn new() -> Self {
-        Self
+        Self {
+            identity: DeviceIdentity::generate(),
+        }
+    }
+
+    pub fn public_key_b64(&self) -> &str {
+        &self.identity.public_key_b64
     }
 
     pub fn issue(
@@ -54,9 +73,15 @@ impl CapabilityIssuer {
         if decision.requires_approval && !approved {
             return Err(CapabilityError::ApprovalRequired);
         }
+        if options.ttl <= Duration::zero() {
+            return Err(CapabilityError::InvalidLifetime);
+        }
+        if options.max_uses == 0 {
+            return Err(CapabilityError::InvalidUseLimit);
+        }
 
         let now = Utc::now();
-        Ok(CapabilityToken {
+        let mut token = CapabilityToken {
             token_id: Uuid::new_v4(),
             venture_id: decision.request.venture_id.clone(),
             actor_id: decision.request.actor_id.clone(),
@@ -67,36 +92,71 @@ impl CapabilityIssuer {
             issued_at: now,
             expires_at: now + options.ttl,
             policy_decision_id: decision.decision_id,
-        })
+            issuer_public_key_b64: self.identity.public_key_b64.clone(),
+            signature_b64: String::new(),
+        };
+        token.signature_b64 = self.identity.sign(&token_signing_bytes(&token));
+        Ok(token)
     }
 }
 
-#[derive(Debug, Default)]
+impl Default for CapabilityIssuer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug)]
 pub struct CapabilityValidator {
+    trusted_issuer_public_key_b64: String,
     uses: std::collections::HashMap<Uuid, u32>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ValidationContext<'a> {
+    pub venture_id: &'a str,
+    pub actor_id: &'a str,
+    pub tool: &'a str,
+    pub operation: &'a str,
+    pub resource: &'a str,
+    pub now: DateTime<Utc>,
+}
+
 impl CapabilityValidator {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(trusted_issuer_public_key_b64: impl Into<String>) -> Self {
+        Self {
+            trusted_issuer_public_key_b64: trusted_issuer_public_key_b64.into(),
+            uses: std::collections::HashMap::new(),
+        }
     }
 
     pub fn validate(
         &mut self,
         token: &CapabilityToken,
-        venture_id: &str,
-        tool: &str,
-        operation: &str,
-        resource: &str,
-        now: DateTime<Utc>,
+        context: ValidationContext<'_>,
     ) -> Result<(), CapabilityError> {
-        if token.venture_id != venture_id {
+        if token.issuer_public_key_b64 != self.trusted_issuer_public_key_b64 {
+            return Err(CapabilityError::UntrustedIssuer);
+        }
+        DeviceIdentity::verify(
+            &token.issuer_public_key_b64,
+            &token_signing_bytes(token),
+            &token.signature_b64,
+        )
+        .map_err(|_| CapabilityError::InvalidSignature)?;
+        if token.venture_id != context.venture_id {
             return Err(CapabilityError::VentureMismatch);
         }
-        if token.tool != tool || token.operation != operation || token.resource != resource {
+        if token.actor_id != context.actor_id {
+            return Err(CapabilityError::ActorMismatch);
+        }
+        if token.tool != context.tool
+            || token.operation != context.operation
+            || token.resource != context.resource
+        {
             return Err(CapabilityError::ScopeMismatch);
         }
-        if now > token.expires_at {
+        if context.now >= token.expires_at {
             return Err(CapabilityError::Expired);
         }
 
@@ -107,6 +167,11 @@ impl CapabilityValidator {
         *count += 1;
         Ok(())
     }
+}
+
+fn token_signing_bytes(token: &CapabilityToken) -> Vec<u8> {
+    serde_json::to_vec(&CapabilityTokenBody::from(token))
+        .expect("capability token body must serialize")
 }
 
 #[cfg(test)]
@@ -129,14 +194,16 @@ mod tests {
         };
         let decision = engine.evaluate(request);
         let issuer = CapabilityIssuer::new();
-        let token = issuer.issue(&decision, IssueOptions::default(), false).unwrap();
+        let token = issuer
+            .issue(&decision, IssueOptions::default(), false)
+            .unwrap();
 
-        let mut validator = CapabilityValidator::new();
+        let mut validator = CapabilityValidator::new(issuer.public_key_b64());
         validator
-            .validate(&token, "ven_1", "email", "draft", "customer:1", Utc::now())
+            .validate(&token, validation_context("draft"))
             .unwrap();
         assert_eq!(
-            validator.validate(&token, "ven_1", "email", "draft", "customer:1", Utc::now()),
+            validator.validate(&token, validation_context("draft")),
             Err(CapabilityError::Exhausted)
         );
     }
@@ -154,13 +221,31 @@ mod tests {
             automation_level: AutomationLevel::L1Draft,
         };
         let decision = engine.evaluate(request);
-        let token = CapabilityIssuer::new()
+        let issuer = CapabilityIssuer::new();
+        let token = issuer
             .issue(&decision, IssueOptions::default(), false)
             .unwrap();
-        let mut validator = CapabilityValidator::new();
+        let mut validator = CapabilityValidator::new(issuer.public_key_b64());
         assert_eq!(
-            validator.validate(&token, "ven_1", "email", "send", "customer:1", Utc::now()),
+            validator.validate(
+                &token,
+                ValidationContext {
+                    operation: "send",
+                    ..validation_context("draft")
+                },
+            ),
             Err(CapabilityError::ScopeMismatch)
         );
+    }
+
+    fn validation_context(operation: &str) -> ValidationContext<'_> {
+        ValidationContext {
+            venture_id: "ven_1",
+            actor_id: "agent",
+            tool: "email",
+            operation,
+            resource: "customer:1",
+            now: Utc::now(),
+        }
     }
 }

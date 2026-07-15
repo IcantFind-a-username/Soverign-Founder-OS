@@ -44,7 +44,11 @@ impl DeviceIdentity {
         STANDARD.encode(signature.to_bytes())
     }
 
-    pub fn verify(public_key_b64: &str, message: &[u8], signature_b64: &str) -> Result<(), IdentityError> {
+    pub fn verify(
+        public_key_b64: &str,
+        message: &[u8],
+        signature_b64: &str,
+    ) -> Result<(), IdentityError> {
         let public_bytes = STANDARD
             .decode(public_key_b64)
             .map_err(|e| IdentityError::InvalidKey(e.to_string()))?;

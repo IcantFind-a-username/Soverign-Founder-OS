@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sovereign_capability::{CapabilityError, CapabilityValidator};
+use sovereign_capability::{CapabilityError, CapabilityValidator, ValidationContext};
 use sovereign_contracts::CapabilityToken;
 use thiserror::Error;
 
@@ -15,12 +15,15 @@ pub enum SandboxError {
 
 pub struct ExecutionRequest<'a> {
     pub token: &'a CapabilityToken,
+    pub venture_id: &'a str,
+    pub actor_id: &'a str,
     pub tool: &'a str,
     pub operation: &'a str,
     pub resource: &'a str,
     pub input: serde_json::Value,
 }
 
+#[derive(Debug)]
 pub struct ExecutionResult {
     pub output: serde_json::Value,
     pub sandboxed: bool,
@@ -34,9 +37,12 @@ pub struct SandboxExecutor {
 }
 
 impl SandboxExecutor {
-    pub fn new(allowed_tools: Vec<String>) -> Self {
+    pub fn new(
+        allowed_tools: Vec<String>,
+        trusted_issuer_public_key_b64: impl Into<String>,
+    ) -> Self {
         Self {
-            validator: CapabilityValidator::new(),
+            validator: CapabilityValidator::new(trusted_issuer_public_key_b64),
             allowed_tools,
         }
     }
@@ -46,17 +52,24 @@ impl SandboxExecutor {
         request: ExecutionRequest<'_>,
     ) -> Result<ExecutionResult, SandboxError> {
         let tool_key = format!("{}.{}", request.tool, request.operation);
-        if !self.allowed_tools.iter().any(|t| t == &tool_key || t == request.tool) {
+        if !self
+            .allowed_tools
+            .iter()
+            .any(|t| t == &tool_key || t == request.tool)
+        {
             return Err(SandboxError::ToolNotAllowed(tool_key));
         }
 
         self.validator.validate(
             request.token,
-            &request.token.venture_id,
-            request.tool,
-            request.operation,
-            request.resource,
-            Utc::now(),
+            ValidationContext {
+                venture_id: request.venture_id,
+                actor_id: request.actor_id,
+                tool: request.tool,
+                operation: request.operation,
+                resource: request.resource,
+                now: Utc::now(),
+            },
         )?;
 
         // MVP: simulate tool execution in-process. Real impl uses WASM/container.
@@ -83,7 +96,7 @@ mod tests {
     use sovereign_contracts::{ActionRequest, AutomationLevel, DataClass};
     use sovereign_policy::PolicyEngine;
 
-    fn sample_token() -> CapabilityToken {
+    fn sample_token() -> (CapabilityIssuer, CapabilityToken) {
         let engine = PolicyEngine::new();
         let decision = engine.evaluate(ActionRequest {
             actor_id: "agent".into(),
@@ -94,18 +107,22 @@ mod tests {
             data_class: DataClass::Amber,
             automation_level: AutomationLevel::L1Draft,
         });
-        CapabilityIssuer::new()
+        let issuer = CapabilityIssuer::new();
+        let token = issuer
             .issue(&decision, IssueOptions::default(), false)
-            .unwrap()
+            .unwrap();
+        (issuer, token)
     }
 
     #[test]
     fn executes_with_valid_token() {
-        let token = sample_token();
-        let mut sandbox = SandboxExecutor::new(vec!["email.draft".into()]);
+        let (issuer, token) = sample_token();
+        let mut sandbox = SandboxExecutor::new(vec!["email.draft".into()], issuer.public_key_b64());
         let result = sandbox
             .execute(ExecutionRequest {
                 token: &token,
+                venture_id: "ven_1",
+                actor_id: "agent",
                 tool: "email",
                 operation: "draft",
                 resource: "customer:1",
@@ -117,11 +134,13 @@ mod tests {
 
     #[test]
     fn rejects_disallowed_tool() {
-        let token = sample_token();
-        let mut sandbox = SandboxExecutor::new(vec!["file.read".into()]);
+        let (issuer, token) = sample_token();
+        let mut sandbox = SandboxExecutor::new(vec!["file.read".into()], issuer.public_key_b64());
         let err = sandbox
             .execute(ExecutionRequest {
                 token: &token,
+                venture_id: "ven_1",
+                actor_id: "agent",
                 tool: "email",
                 operation: "draft",
                 resource: "customer:1",

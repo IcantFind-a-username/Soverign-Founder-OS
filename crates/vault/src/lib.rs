@@ -22,6 +22,8 @@ pub enum VaultError {
     Json(#[from] serde_json::Error),
     #[error("entry not found: {0}")]
     NotFound(String),
+    #[error("invalid vault entry name: {0}")]
+    InvalidEntryName(String),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -65,10 +67,15 @@ impl Vault {
                 entries: Vec::new(),
             }
         };
-        Ok(Self { root, key, manifest })
+        Ok(Self {
+            root,
+            key,
+            manifest,
+        })
     }
 
     pub fn put(&mut self, name: &str, plaintext: &[u8]) -> Result<(), VaultError> {
+        validate_entry_name(name)?;
         let blob = encrypt(&self.key, plaintext)?;
         let path = self.root.join(format!("{name}.enc"));
         let json = serde_json::to_vec_pretty(&blob)?;
@@ -81,6 +88,7 @@ impl Vault {
     }
 
     pub fn get(&self, name: &str) -> Result<Vec<u8>, VaultError> {
+        validate_entry_name(name)?;
         let path = self.root.join(format!("{name}.enc"));
         if !path.exists() {
             return Err(VaultError::NotFound(name.to_string()));
@@ -102,6 +110,21 @@ impl Vault {
     }
 }
 
+fn validate_entry_name(name: &str) -> Result<(), VaultError> {
+    let is_single_normal_component = {
+        let mut components = std::path::Path::new(name).components();
+        matches!(components.next(), Some(std::path::Component::Normal(_)))
+            && components.next().is_none()
+    };
+    if !is_single_normal_component
+        || name.contains(['/', '\\'])
+        || name.chars().any(char::is_control)
+    {
+        return Err(VaultError::InvalidEntryName(name.to_string()));
+    }
+    Ok(())
+}
+
 fn generate_key() -> [u8; 32] {
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
@@ -118,9 +141,7 @@ fn load_key(path: &std::path::Path) -> Result<[u8; 32], VaultError> {
     let bytes = STANDARD
         .decode(encoded.trim())
         .map_err(|_| VaultError::DecryptionFailed)?;
-    bytes
-        .try_into()
-        .map_err(|_| VaultError::DecryptionFailed)
+    bytes.try_into().map_err(|_| VaultError::DecryptionFailed)
 }
 
 fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<EncryptedBlob, VaultError> {
@@ -167,5 +188,16 @@ mod tests {
         vault.put("company_profile", b"stealth startup").unwrap();
         let data = vault.get("company_profile").unwrap();
         assert_eq!(data, b"stealth startup");
+    }
+
+    #[test]
+    fn rejects_path_traversal_names() {
+        let dir = tempdir().unwrap();
+        let mut vault = Vault::init(dir.path().join("vault")).unwrap();
+        assert!(matches!(
+            vault.put("../outside", b"secret"),
+            Err(VaultError::InvalidEntryName(_))
+        ));
+        assert!(!dir.path().join("outside.enc").exists());
     }
 }

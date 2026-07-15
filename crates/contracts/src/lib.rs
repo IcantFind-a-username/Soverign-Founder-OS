@@ -58,6 +58,42 @@ pub struct CapabilityToken {
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub policy_decision_id: Uuid,
+    pub issuer_public_key_b64: String,
+    pub signature_b64: String,
+}
+
+/// Canonical signed content of a capability token.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityTokenBody {
+    pub token_id: Uuid,
+    pub venture_id: String,
+    pub actor_id: String,
+    pub tool: String,
+    pub operation: String,
+    pub resource: String,
+    pub max_uses: u32,
+    pub issued_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub policy_decision_id: Uuid,
+    pub issuer_public_key_b64: String,
+}
+
+impl From<&CapabilityToken> for CapabilityTokenBody {
+    fn from(token: &CapabilityToken) -> Self {
+        Self {
+            token_id: token.token_id,
+            venture_id: token.venture_id.clone(),
+            actor_id: token.actor_id.clone(),
+            tool: token.tool.clone(),
+            operation: token.operation.clone(),
+            resource: token.resource.clone(),
+            max_uses: token.max_uses,
+            issued_at: token.issued_at,
+            expires_at: token.expires_at,
+            policy_decision_id: token.policy_decision_id,
+            issuer_public_key_b64: token.issuer_public_key_b64.clone(),
+        }
+    }
 }
 
 /// Append-only signed audit event.
@@ -73,6 +109,7 @@ pub struct AuditEvent {
     pub payload_hash: String,
     pub previous_event_hash: String,
     pub policy_decision_hash: Option<String>,
+    pub device_public_key_b64: String,
     pub event_hash: String,
     pub device_signature: Option<String>,
 }
@@ -90,6 +127,7 @@ pub struct AuditEventBody {
     pub payload_hash: String,
     pub previous_event_hash: String,
     pub policy_decision_hash: Option<String>,
+    pub device_public_key_b64: String,
 }
 
 impl From<&AuditEvent> for AuditEventBody {
@@ -105,6 +143,7 @@ impl From<&AuditEvent> for AuditEventBody {
             payload_hash: event.payload_hash.clone(),
             previous_event_hash: event.previous_event_hash.clone(),
             policy_decision_hash: event.policy_decision_hash.clone(),
+            device_public_key_b64: event.device_public_key_b64.clone(),
         }
     }
 }

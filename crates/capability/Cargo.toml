@@ -8,7 +8,9 @@ repository.workspace = true
 
 [dependencies]
 sovereign-contracts = { workspace = true }
+sovereign-identity = { workspace = true }
 chrono = { workspace = true }
+serde_json = { workspace = true }
 uuid = { workspace = true }
 thiserror = { workspace = true }
 

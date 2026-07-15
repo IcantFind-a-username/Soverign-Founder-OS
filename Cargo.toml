@@ -9,6 +9,7 @@ members = [
     "crates/vault",
     "crates/sandbox",
     "apps/cli",
+    "tests/adversarial",
 ]
 
 [workspace.package]

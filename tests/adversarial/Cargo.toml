@@ -1,0 +1,20 @@
+[package]
+name = "sovereign-adversarial-tests"
+description = "Cross-crate adversarial tests for Sovereign Agent Runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+sovereign-audit-ledger = { workspace = true }
+sovereign-capability = { workspace = true }
+sovereign-contracts = { workspace = true }
+sovereign-identity = { workspace = true }
+sovereign-policy = { workspace = true }
+sovereign-sandbox = { workspace = true }
+sovereign-vault = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+tempfile = "3"

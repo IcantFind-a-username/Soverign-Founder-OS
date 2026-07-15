@@ -25,34 +25,41 @@ impl PolicyEngine {
     }
 
     pub fn evaluate(&self, request: ActionRequest) -> PolicyDecision {
-        let mut allowed = true;
-        let mut reason = "allowed by default policy".to_string();
-        let mut requires_approval = false;
+        let mut denial_reasons = Vec::new();
+        let mut approval_reasons = Vec::new();
 
-        if CLOUD_BLOCKED_CLASSES.contains(&request.data_class) && request.tool.starts_with("cloud.") {
-            allowed = false;
-            reason = "red-zone data cannot be sent to cloud tools".to_string();
+        if CLOUD_BLOCKED_CLASSES.contains(&request.data_class) && request.tool.starts_with("cloud.")
+        {
+            denial_reasons.push("red-zone data cannot be sent to cloud tools");
         }
 
         if request.automation_level >= AutomationLevel::L2ApproveExecute {
-            requires_approval = true;
-            reason = "L2+ actions require human approval".to_string();
+            approval_reasons.push("L2+ actions require human approval");
         }
 
         let tool_key = format!("{}.{}", request.tool, request.operation);
-        if HIGH_RISK_TOOLS.iter().any(|t| tool_key == *t || request.tool == *t) {
-            requires_approval = true;
-            if !allowed {
-                reason = format!("{reason}; high-risk tool");
-            } else {
-                reason = "high-risk tool requires explicit approval".to_string();
-            }
+        if HIGH_RISK_TOOLS
+            .iter()
+            .any(|t| tool_key == *t || request.tool == *t)
+        {
+            approval_reasons.push("high-risk tool requires explicit approval");
         }
 
         if request.resource.contains("..") || request.resource.starts_with('/') {
-            allowed = false;
-            reason = "path traversal or absolute path access denied".to_string();
+            denial_reasons.push("path traversal or absolute path access denied");
         }
+
+        let allowed = denial_reasons.is_empty();
+        let requires_approval = !approval_reasons.is_empty();
+        let reason = denial_reasons
+            .into_iter()
+            .chain(approval_reasons)
+            .collect::<Vec<_>>();
+        let reason = if reason.is_empty() {
+            "allowed by default policy".to_string()
+        } else {
+            reason.join("; ")
+        };
 
         PolicyDecision {
             decision_id: Uuid::new_v4(),
@@ -84,14 +91,24 @@ mod tests {
     #[test]
     fn blocks_red_data_to_cloud() {
         let engine = PolicyEngine::new();
-        let decision = engine.evaluate(req("cloud.model", "infer", DataClass::Red, AutomationLevel::L1Draft));
+        let decision = engine.evaluate(req(
+            "cloud.model",
+            "infer",
+            DataClass::Red,
+            AutomationLevel::L1Draft,
+        ));
         assert!(!decision.allowed);
     }
 
     #[test]
     fn high_risk_requires_approval() {
         let engine = PolicyEngine::new();
-        let decision = engine.evaluate(req("email", "send", DataClass::Green, AutomationLevel::L2ApproveExecute));
+        let decision = engine.evaluate(req(
+            "email",
+            "send",
+            DataClass::Green,
+            AutomationLevel::L2ApproveExecute,
+        ));
         assert!(decision.requires_approval);
     }
 

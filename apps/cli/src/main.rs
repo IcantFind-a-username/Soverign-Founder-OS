@@ -77,7 +77,8 @@ fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     }
     let ledger_path = root.join("ledger.json");
     if ledger_path.exists() {
-        let ledger = AuditLedger::load(&ledger_path)?;
+        let device = DeviceIdentity::load(&root.join("device.json"))?;
+        let ledger = AuditLedger::load(&ledger_path, &device.public_key_b64)?;
         println!("audit events: {}", ledger.events().len());
     }
     Ok(())
@@ -125,9 +126,11 @@ fn cmd_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("token_id: {}", token.token_id);
     println!("expires_at: {}", token.expires_at);
 
-    let mut sandbox = SandboxExecutor::new(vec!["email.draft".into()]);
+    let mut sandbox = SandboxExecutor::new(vec!["email.draft".into()], issuer.public_key_b64());
     let result = sandbox.execute(ExecutionRequest {
         token: &token,
+        venture_id: "ven_demo",
+        actor_id: "agent_builder",
         tool: "email",
         operation: "draft",
         resource: "customer:acme",
@@ -139,7 +142,7 @@ fn cmd_demo() -> Result<(), Box<dyn std::error::Error>> {
     let decision_hash = hash_bytes(&serde_json::to_vec(&decision)?);
     let ledger_path = root.join("ledger.json");
     let mut ledger = if ledger_path.exists() {
-        AuditLedger::load(&ledger_path)?
+        AuditLedger::load(&ledger_path, &device.public_key_b64)?
     } else {
         AuditLedger::new()
     };
