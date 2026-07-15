@@ -1,6 +1,6 @@
 [package]
 name = "sovereign-sandbox"
-description = "Sandboxed tool execution for Sovereign Agent Runtime"
+description = "Sandboxed tool execution for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

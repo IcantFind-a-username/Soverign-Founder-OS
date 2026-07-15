@@ -1,50 +1,75 @@
 # Sovereign Founder OS
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Stage](https://img.shields.io/badge/Stage-0%20Constitution-lightgrey)](ROADMAP.md)
+[![Stage](https://img.shields.io/badge/Stage-1%20Secure%20Kernel-orange)](ROADMAP.md)
 
-> **Your company. Your data. Your keys.**
-> **Many models. No master. No single point of failure.**
+> **Build and run your one-person company with AI—without giving up control of your data, decisions, or business.**
+
+**Sovereign Founder OS** is an early-stage open-source AI operating system being built to help anyone start and run a one-person business while keeping their data, decisions, and business continuity under their control.
 
 **[中文完整设计文档 →](docs/zh/README.md)**
 
 ---
 
-Sovereign is a **local-first, model-neutral, jurisdiction-aware** AI operating system for one-person companies, independent developers, small consultancies, and Micro-SaaS founders.
+## From Idea to Operating Business
 
-It is built in two layers:
-
-1. **Sovereign Agent Runtime** — a reusable secure runtime (model routing, sandboxing, encrypted vault, policy engine, audit ledger)
-2. **Founder OS** — a reference application proving the runtime works for real business operations
+The product vision guides a founder through the whole business loop, without requiring them to configure agents or understand software infrastructure:
 
 ```text
-• No model lock-in
-• No trusted plugins
-• No single point of failure
-• Encrypted local ownership
-• Verifiable permissions
-• Recoverable workflows
+Understand the founder and their strengths
+  → Find a viable business direction
+  → Choose customers and validate their problems
+  → Design the offer, product, and pricing
+  → Decide today's most important work
+  → Assemble an AI crew and execute
+  → Win customers and collect feedback
+  → Manage delivery, contracts, revenue, and risk
+  → Improve the company continuously
 ```
 
-## Why This Exists
+Users see goals, decisions, approvals, progress, and the next action—not agent parameters, token counts, or tool schemas.
 
-When a single AI provider, cloud vendor, or platform fails — or revokes access — a business built on that dependency can stop overnight. Sovereign Founder OS ensures that **your data, keys, and business state remain yours**, and your company keeps running even when components fail.
+## Planned Product System
 
-> We killed the model, the server and the plugin. **The company kept running.**
+| Module | What it is designed to help the founder do |
+| --- | --- |
+| **Venture Studio** | Discover opportunities, validate customer problems, choose a business model, position an offer, and design pricing experiments |
+| **AI Crew** | Bring together product, research, development, design, marketing, sales, support, finance, legal, and security roles for the task at hand |
+| **Product & Delivery** | Build websites, prototypes, software, content, client deliverables, plans, and repeatable services |
+| **Customers & Growth** | Define customers, manage leads and CRM, create campaigns and proposals, follow up, sell, and learn from feedback |
+| **Finance, Legal & Tax** | Track income, expenses, invoices, cash flow, tax reserves, contracts, obligations, and professional escalation needs |
+| **Founder Command Center** | Show company stage, current risks, key metrics, pending approvals, unvalidated assumptions, and the three most important next actions |
+| **Sovereign Trust Layer** | Keep data, permissions, evidence, model choice, recovery, and the founder's right to exit under user control |
 
-Read **[The Sovereign Crew Manifesto →](MANIFESTO.md)** for the principles we will not compromise.
+The **Sovereign Enterprise Graph** will be the structured source of truth beneath these modules: the founder, products, customers, projects, contracts, invoices, knowledge, metrics, risks, and decisions—not a pile of chat history.
 
-## How It Works
+## Why Sovereign
 
-Users describe what they want to achieve. The system handles the rest:
+Business automation becomes dangerous when a model, plugin, cloud account, or platform can quietly become the owner. Sovereign Founder OS is designed so that useful AI assistance does not require that surrender:
 
-```text
-Clarify goals → Analyze opportunity → Generate venture plan
-→ Assemble AI crew → Execute tasks → Deliver artifacts
-→ Collect feedback → Update strategy → Show next action
-```
+- Data and authoritative business state must remain user-controlled and portable
+- The system is designed to be local-first and independent of any one model or provider
+- AI must not grant itself authority; important actions must require independently enforced policy and, when needed, human approval
+- Plugins and external content must be treated as untrusted by default
+- Important actions must leave tamper-evident, understandable evidence
+- Workflows are designed to recover from model, process, node, and provider failure
+- Core security, export, audit, and recovery will not be premium-only features
+- Security limitations must be stated openly; the project will not claim absolute security
 
-Users see **what to do next** — not agent parameters, token counts, or tool schemas.
+> **Defining demo target:** Kill the model, the server, and the plugin. **The company keeps running.**
+
+Read the **[Sovereign Founder OS Manifesto →](MANIFESTO.md)** for the principles we will not compromise.
+
+## One Product, Clear Names
+
+| Name | Role |
+| --- | --- |
+| **Sovereign Founder OS** | The complete product and the project's only primary brand |
+| **AI Crew** | The user-facing team of AI roles assembled for a business goal |
+| **Crew Orchestrator** | The internal subsystem that selects, constrains, coordinates, and dissolves each AI crew |
+| **Sovereign Trust Layer** | The cross-cutting product layer for privacy, authority, audit, resilience, and data sovereignty |
+| **Sovereign Runtime** | The underlying local-first, model-neutral runtime that implements the Trust Layer and controlled execution |
+| **Sovereign Founder OS Manifesto** | The project's public position and non-negotiable principles |
 
 ### Core Concepts
 
@@ -65,7 +90,7 @@ Users see **what to do next** — not agent parameters, token counts, or tool sc
 
 | Document | Description |
 | --- | --- |
-| [MANIFESTO.md](MANIFESTO.md) | The Sovereign Crew position and non-negotiable principles |
+| [MANIFESTO.md](MANIFESTO.md) | The Sovereign Founder OS position and non-negotiable principles |
 | [VISION.md](VISION.md) | Product vision and design principles |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Threat model v0.1 |
@@ -86,7 +111,7 @@ All detailed design specifications are public in [`docs/zh/`](docs/zh/):
 
 | Layer | Technology |
 | --- | --- |
-| Secure Core | Rust |
+| Sovereign Runtime | Rust |
 | Desktop UI | TypeScript + React + Tauri |
 | Agent Workers | Python (isolated, untrusted boundary) |
 | Protocols | JSON Schema, gRPC, WASI, MCP, A2A |
@@ -134,7 +159,7 @@ You are free to use, modify, and distribute this project under Apache 2.0 terms.
 
 ## Links
 
-- Repository: https://github.com/IcantFind-a-username/Soverign-Founder-OS
+- Repository: https://github.com/IcantFind-a-username/Sovereign-Founder-OS
 - Documentation index: [docs/INDEX.md](docs/INDEX.md)
 - Why not another agent?: [docs/why-not-another-agent.md](docs/why-not-another-agent.md)
 

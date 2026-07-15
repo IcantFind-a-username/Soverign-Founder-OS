@@ -1,6 +1,6 @@
 [package]
 name = "sovereign-contracts"
-description = "Shared types for Sovereign Agent Runtime"
+description = "Shared types for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

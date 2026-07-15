@@ -1,6 +1,6 @@
 [package]
 name = "sovereign-identity"
-description = "Device identity and signing for Sovereign Agent Runtime"
+description = "Device identity and signing for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

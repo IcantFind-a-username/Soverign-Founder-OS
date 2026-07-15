@@ -2,7 +2,7 @@ Sovereign Founder OS
 Copyright 2026 The Sovereign Founder OS Authors
 
 This product includes software developed as part of the Sovereign Founder OS
-open source project (https://github.com/IcantFind-a-username/Soverign-Founder-OS).
+open source project (https://github.com/IcantFind-a-username/Sovereign-Founder-OS).
 
 The project documentation, architecture specifications, threat models, and
 design materials in this repository are original works of the project authors
@@ -10,7 +10,7 @@ and are licensed under the Apache License, Version 2.0.
 
 Trademark Notice
 ----------------
-"Sovereign Founder OS", "Sovereign Agent Runtime", "Mutually Constrained
+"Sovereign Founder OS", "Sovereign Runtime", "Mutually Constrained
 Autonomy", and associated logos are trademarks of the Sovereign Founder OS
 project. Use of these marks requires compliance with the project's trademark
 policy (see TRADEMARK.md).

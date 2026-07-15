@@ -1,4 +1,4 @@
-# The Sovereign Crew Manifesto
+# The Sovereign Founder OS Manifesto
 
 > **Models are replaceable. User data is not.**
 
@@ -15,9 +15,9 @@ We ask a more important set of questions:
 - What evidence remains after it acts?
 - Can the owner recover when the model, machine, plugin, or provider fails?
 
-Sovereign Crew is our answer. It is the design philosophy behind Sovereign Agent Runtime and Sovereign Founder OS.
+**Mutually Constrained Autonomy** is our answer. It is the constitutional design philosophy behind Sovereign Founder OS and the Sovereign Runtime beneath it.
 
-> **A Sovereign Crew is not merely a collection of agents. It is a constitutional arrangement of humans, models, tools, policies, and recovery systems that cooperate without allowing any one of them to become the master.**
+> **Mutually Constrained Autonomy is a constitutional arrangement of humans, models, tools, policies, and recovery systems that cooperate without allowing any one of them to become the master.**
 
 We are not against capable AI. We are against invisible, permanent, and unrecoverable authority.
 
@@ -121,7 +121,7 @@ When convenience and sovereignty conflict, the user must be shown the tradeoff. 
 
 ## How to Judge Us
 
-Do not judge Sovereign Crew by the number of agents in a demo. Ask instead:
+Do not judge Sovereign Founder OS by the number of agents in a demo. Ask instead:
 
 - Can the owner replace the model without losing the company?
 - Can a permission be understood, limited, and revoked?

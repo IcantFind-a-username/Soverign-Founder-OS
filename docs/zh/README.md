@@ -2,6 +2,10 @@
 
 本目录包含 Sovereign Founder OS 的**完整产品与工程设计规格**。所有设计意图均公开可查，是项目的权威蓝图。
 
+> **用 AI 建立和经营属于你自己的一人公司，同时不放弃对数据、决策和企业的控制权。**
+
+Sovereign Founder OS 是完整产品和唯一主品牌。普通用户使用 Venture Studio、AI Crew、Product & Delivery、Customers & Growth、Finance / Legal / Tax 和 Founder Command Center；Sovereign Trust Layer 在底层提供主权、安全与韧性。
+
 ## 阅读顺序
 
 建议按编号顺序阅读，文档之间存在演进关系：
@@ -14,7 +18,7 @@
 | --- | --- | --- |
 | [01](01-AI-Founder-OS-初步设想.md) | AI Founder OS 初步设想 | 产品定位、Venture Graph、Founder Cockpit、临时 Crew、三层隐私区、L0–L3 自动化、五条初版工作流、技术路线、商业模式 |
 | [02](02-Sovereign-Founder-OS-主权升级.md) | 主权型升级 | Enterprise Digital Twin、Jurisdiction Engine、税务引擎、企业免疫系统、密码学控制平面、PQC、分布式韧性、四阶段落地 |
-| [03](03-开源项目企划书-v0.1.md) | 开源项目企划书 v0.1 | 两层产品结构、与 OpenClaw 差异化、六平面架构、SPOF 清单、插件安全、Chaos CLI、技术栈、仓库结构、Stage 0–7、商业模式 |
+| [03](03-开源项目企划书-v0.1.md) | 开源项目企划书 v0.1 | 完整产品结构、Sovereign Runtime、与 OpenClaw 差异化、六平面架构、SPOF 清单、插件安全、Chaos CLI、Stage 0–7、商业模式 |
 | [04](04-GUI设计.md) | GUI 设计 | 三种界面深度、七个一级导航、Approval Center、隐私指示器、五步引导向导、首批六个页面 |
 
 ## 与英文文档的关系
@@ -28,8 +32,10 @@
 
 ## 关键设计决策速查
 
-- **两层产品**：Sovereign Agent Runtime（可复用安全内核）+ Founder OS（参考应用）
-- **开发顺序**：先做 Runtime Alpha，再做完整 Founder OS
+- **唯一产品主品牌**：Sovereign Founder OS 是帮助普通人创建和经营一人公司的完整产品；Runtime 是其底层技术基础
+- **AI 编排**：AI Crew 是用户功能模块；Crew Orchestrator 是内部编排组件，不是第二主品牌
+- **底层实现**：Sovereign Trust Layer 由 Sovereign Runtime 承载，包括 Model Mesh、Policy Engine、Secure Vault、Audit Ledger、Tool Sandbox 和 Recovery Mesh
+- **开发顺序**：先完成 Trust Layer 的最小可信基础，再用真实 Founder OS 工作流验证；工程顺序不改变产品定位
 - **核心抽象**：Sovereign Enterprise Graph（企业数字孪生），不是聊天记录
 - **安全架构**：Mutually Constrained Autonomy（相互制约的自主性）
 - **韧性目标**：Kill Everything 演示 —— 模型、服务器、插件全部失效，公司继续运转

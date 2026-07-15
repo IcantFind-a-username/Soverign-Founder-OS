@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document describes threats against Sovereign Founder OS and Sovereign Agent Runtime during the Alpha phase. It is a living document and will be updated as the implementation matures.
+This document describes threats against Sovereign Founder OS and Sovereign Runtime during the Alpha phase. It is a living document and will be updated as the implementation matures.
 
 ## Assets to Protect
 

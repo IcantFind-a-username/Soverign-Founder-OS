@@ -4,7 +4,7 @@ Sovereign Founder OS is not positioned as "another personal AI assistant, but sa
 
 ## The Category We Are Creating
 
-> A secure, local-first runtime for AI agents that operate your business — where no model, plugin, or infrastructure component is implicitly trusted.
+> An AI operating system that helps anyone build and run a one-person company—without giving up control of their data, decisions, or business.
 
 ## Personal AI Assistants (e.g., OpenClaw)
 
@@ -22,18 +22,22 @@ Their architecture centers on a capable assistant with configurable permissions.
 
 ## Sovereign Founder OS
 
-Our architecture centers on an enterprise operating system where:
+Our architecture is designed around an enterprise operating system where:
 
+- A founder is guided from business direction and validation to delivery, customers, finance, and daily operations
 - Business state drives actions, not chat messages
-- Security kernel and permission boundaries come first
+- The Founder Command Center exposes priorities, risks, approvals, progress, and business health
+- AI crews are assembled around business outcomes rather than presented as a technical configuration surface
 - Plugins are untrusted and isolated by default
 - Model, node, key, data, and policy failures each have independent fallback paths
 - Every sensitive action requires verifiable approval
-- The company keeps running when components fail
+- Business workflows are designed to continue or recover when components fail
 
-**Analogy:** Ensure those hands can never bypass permissions, steal data, tamper with evidence, or hold the entire company hostage.
+**Analogy:** Give the founder an operating team and a company control room, while ensuring those AI hands cannot bypass permissions, steal data, tamper with evidence, or hold the business hostage.
 
-## Side-by-Side
+## Target Architecture: Side-by-Side
+
+This table describes the intended complete architecture and differentiation. The project is currently at Stage 1; later-stage recovery, jurisdiction, and gauntlet capabilities are roadmap commitments, not shipped features.
 
 | Dimension | Personal AI Assistant | Sovereign Founder OS |
 | --- | --- | --- |
@@ -56,7 +60,7 @@ OpenClaw and similar projects proved that people want capable personal agents. S
 
 We may provide OpenClaw Skill compatibility — importing existing skills into a stricter isolation and permission framework.
 
-## Who Should Use What
+## Intended Use
 
 **Use a personal AI assistant when:**
 - You want a general-purpose helper across chat channels
@@ -70,7 +74,7 @@ We may provide OpenClaw Skill compatibility — importing existing skills into a
 - You need auditable, approvable, recoverable AI operations
 - You want legal, tax, and security context built into the system
 
-**Use Sovereign Agent Runtime alone when:**
+**Use Sovereign Runtime alone when:**
 - You are building your own agent product
 - You need model-neutral, sandboxed, auditable agent execution
 - You want to embed our security kernel without adopting Founder OS
@@ -78,7 +82,7 @@ We may provide OpenClaw Skill compatibility — importing existing skills into a
 ## The One-Line Difference
 
 > Personal AI assistants give AI hands.
-> Sovereign Founder OS ensures those hands operate inside verifiable, revocable, recoverable boundaries — so the company survives when anything fails.
+> Sovereign Founder OS is designed to keep those hands inside verifiable, revocable, recoverable boundaries — so the company can recover when components fail.
 
 ## Further Reading
 

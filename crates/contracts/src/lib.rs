@@ -1,4 +1,4 @@
-//! Canonical data contracts for Sovereign Agent Runtime.
+//! Canonical data contracts for Sovereign Runtime.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

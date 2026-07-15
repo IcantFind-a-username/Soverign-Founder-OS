@@ -5,7 +5,7 @@
 The following names and phrases are trademarks of the Sovereign Founder OS project:
 
 - **Sovereign Founder OS**
-- **Sovereign Agent Runtime**
+- **Sovereign Runtime**
 - **Mutually Constrained Autonomy** (as used in this project's security architecture)
 - **Agent Security Gauntlet** (as used in this project's benchmark suite)
 
@@ -17,7 +17,7 @@ You may use the project name to:
 
 - Refer to the project in truthful, non-misleading descriptions
 - Indicate that your software is based on or compatible with Sovereign Founder OS
-- Link to the official repository: https://github.com/IcantFind-a-username/Soverign-Founder-OS
+- Link to the official repository: https://github.com/IcantFind-a-username/Sovereign-Founder-OS
 
 ## Prohibited Uses
 

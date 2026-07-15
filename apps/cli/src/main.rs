@@ -9,7 +9,7 @@ use sovereign_vault::Vault;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "sovereign", about = "Sovereign Agent Runtime CLI", version)]
+#[command(name = "sovereign", about = "Sovereign Runtime CLI", version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

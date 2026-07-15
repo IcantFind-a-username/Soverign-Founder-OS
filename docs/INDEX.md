@@ -21,7 +21,7 @@ English root docs for international contributors; complete Chinese blueprint in 
 | Document | Language | Description |
 | --- | --- | --- |
 | [README.md](../README.md) | EN + 中文 link | Project entry point |
-| [MANIFESTO.md](../MANIFESTO.md) | English | Sovereign Crew's position and non-negotiable principles |
+| [MANIFESTO.md](../MANIFESTO.md) | English | Sovereign Founder OS position and non-negotiable principles |
 | [VISION.md](../VISION.md) | English | Product vision and principles |
 | [ROADMAP.md](../ROADMAP.md) | English | Development stages and milestones |
 | [docs/zh/README.md](zh/README.md) | 中文 | Complete design specifications |
@@ -56,7 +56,7 @@ The following documents contain the full, detailed product and engineering speci
 | --- | --- | --- |
 | 01 | [AI Founder OS 初步设想](zh/01-AI-Founder-OS-初步设想.md) | Venture Graph, Founder Cockpit, ephemeral crews, privacy zones, v1 workflows |
 | 02 | [Sovereign Founder OS 主权升级](zh/02-Sovereign-Founder-OS-主权升级.md) | Enterprise Digital Twin, jurisdiction engine, tax, security immune system, cryptography, PQC |
-| 03 | [开源项目企划书 v0.1](zh/03-开源项目企划书-v0.1.md) | Full project plan: Runtime + Founder OS, OpenClaw comparison, repo layout, chaos tests, business model |
+| 03 | [开源项目企划书 v0.1](zh/03-开源项目企划书-v0.1.md) | Full project plan: product system, Sovereign Runtime, OpenClaw comparison, repo layout, chaos tests, business model |
 | 04 | [GUI 设计](zh/04-GUI设计.md) | Founder Cockpit, three UI modes, seven navigation areas, approval center, onboarding |
 
 See [zh/README.md](zh/README.md) for the Chinese documentation guide.

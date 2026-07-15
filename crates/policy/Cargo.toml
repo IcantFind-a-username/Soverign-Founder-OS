@@ -1,6 +1,6 @@
 [package]
 name = "sovereign-policy"
-description = "Deterministic policy engine for Sovereign Agent Runtime"
+description = "Deterministic policy engine for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "sovereign-cli"
-description = "CLI for Sovereign Agent Runtime"
+description = "CLI for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

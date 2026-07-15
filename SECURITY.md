@@ -8,7 +8,7 @@ If you discover a security vulnerability in Sovereign Founder OS, please report 
 
 ### How to Report
 
-1. Open a private security advisory via GitHub: [Security Advisories](https://github.com/IcantFind-a-username/Soverign-Founder-OS/security/advisories/new)
+1. Open a private security advisory via GitHub: [Security Advisories](https://github.com/IcantFind-a-username/Sovereign-Founder-OS/security/advisories/new)
 2. Or email the maintainers (contact to be published when advisory email is configured)
 
 Include:
@@ -83,7 +83,7 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) and [ROADMAP.md](ROADMAP.md) Stage 5.
 ## Scope
 
 In scope:
-- Sovereign Agent Runtime core
+- Sovereign Runtime core
 - Founder OS application
 - Official plugins and packs distributed by this project
 
@@ -96,4 +96,4 @@ Out of scope:
 
 - [THREAT_MODEL.md](THREAT_MODEL.md)
 - [PRIVACY_MODEL.md](PRIVACY_MODEL.md)
-- [security/](security/) — attack trees and disclosures (as published)
+- `security/` *(planned)* — attack trees and disclosures

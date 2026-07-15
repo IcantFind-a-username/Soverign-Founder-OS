@@ -1,6 +1,6 @@
 [package]
 name = "sovereign-vault"
-description = "Local encrypted vault for Sovereign Agent Runtime"
+description = "Local encrypted vault for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -2,8 +2,33 @@
 
 ## Overview
 
+Sovereign Founder OS is the complete product. Its business modules share an authoritative Enterprise Graph, use the Crew Orchestrator to coordinate AI work, and rely on the Sovereign Trust Layer for controlled execution and continuity.
+
 ```text
-Founder Desktop / Web Console
+Sovereign Founder OS
+├── Venture Studio
+├── AI Crew
+│   └── Crew Orchestrator
+├── Product & Delivery
+├── Customers & Growth
+├── Finance / Legal / Tax
+├── Founder Command Center
+└── Sovereign Trust Layer
+    └── Sovereign Runtime
+        ├── Model Mesh
+        ├── Policy Engine
+        ├── Secure Vault
+        ├── Audit Ledger
+        ├── Tool Sandbox
+        └── Recovery Mesh
+```
+
+The current implementation focuses on the Sovereign Runtime secure kernel. That is an implementation sequence, not a separate product identity: every runtime capability exists to support real Founder OS workflows.
+
+## Runtime and Trust Flow
+
+```text
+Founder Console + Product Modules
               │
               ▼
        Mission Compiler
@@ -14,12 +39,12 @@ Founder Desktop / Web Console
   (company, customers, contracts, assets, tax, security)
               │
               ▼
-       Workflow Planner
-         (plans only, never executes)
+       Crew Orchestrator
+ (assembles roles; plans never execute)
               │
               ▼
 ┌──────────────────────────────────┐
-│       Policy & Trust Plane       │
+│      Sovereign Trust Layer       │
 │  classification / permissions /  │
 │  risk / approval / jurisdiction  │
 └──────────────────────────────────┘
@@ -120,9 +145,9 @@ Auditor + Signed Event Ledger
 
 **Critical invariant:** "What the model suggests" and "What the system allows" are always separated.
 
-## Dynamic Crew Composition
+## Crew Orchestrator
 
-Agents are not permanently assigned roles. Crews are assembled per task based on:
+The Crew Orchestrator turns a business goal into a temporary, constrained AI team. Agents are not permanently assigned roles. Crews are assembled per task based on:
 
 - Current venture stage
 - Task type
@@ -179,7 +204,7 @@ Snapshots are derived from the event chain. Tampering is detectable. Recovery re
 
 | Layer | Technology | Scope |
 | --- | --- | --- |
-| Secure Core | **Rust** | Vault, crypto, policy, capability tokens, audit ledger, sandbox, mesh |
+| Sovereign Runtime | **Rust** | Vault, crypto, policy, capability tokens, audit ledger, sandbox, mesh |
 | UI & SDK | **TypeScript + React + Tauri** | Desktop app, Founder Console, approval UI |
 | Agent Workers | **Python** (isolated, untrusted) | Workflows, RAG, domain packs, evals |
 | Protocols | JSON Schema, Protobuf/gRPC, WIT/WASI, MCP, A2A | Contracts, IPC, plugins, tools |
@@ -205,7 +230,7 @@ sovereign/
 
 | Personal AI Assistant | Sovereign Founder OS |
 | --- | --- |
-| Capability-first | Security kernel and permission boundaries first |
+| Capability-first | Business-operation first, backed by enforceable trust boundaries |
 | Chat and channel driven | Enterprise state and workflow driven |
 | Model fallback | Model, node, key, data, and policy multi-layer fallback |
 | Plugins may run in-process | Plugins isolated by default |
