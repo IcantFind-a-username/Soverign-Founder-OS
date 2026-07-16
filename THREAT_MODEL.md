@@ -4,6 +4,8 @@
 
 This document describes threats against Sovereign Founder OS and Sovereign Runtime during the Alpha phase. It is a living document and will be updated as the implementation matures.
 
+Mitigations are labelled **Current** when enforced by the repository today and **Alpha target** when they are required before the relevant Alpha capability may ship. A target control is not a claim of current protection.
+
 ## Assets to Protect
 
 | Asset | Sensitivity |
@@ -23,11 +25,11 @@ This document describes threats against Sovereign Founder OS and Sovereign Runti
 
 ### Trusted (with verification)
 
-- Deterministic Policy Engine
-- Capability Token issuer and validator
-- Cryptographic vault (Rust core)
-- Signed audit ledger
-- Human owner approval for high-risk actions
+- **Current:** deterministic Policy Engine
+- **Current:** role-separated signing primitives, publisher/Authority trust stores, and Capability V1/V2 validators
+- **Current:** cryptographic vault prototype (Rust core)
+- **Current:** signed append-only audit ledger prototype
+- **Alpha target:** verified human-owner approval for high-risk actions. Capability V2 currently fails closed whenever approval is required.
 
 ### Untrusted (always)
 
@@ -40,9 +42,9 @@ This document describes threats against Sovereign Founder OS and Sovereign Runti
 
 ### Semi-trusted (constrained)
 
-- Cloud model providers (availability and inference only; data minimized via classification)
-- Secondary storage replicas (encrypted, server-blind)
-- Recovery nodes (encrypted copies only)
+- **Alpha target:** cloud model providers (availability and inference only; data minimized via classification)
+- **Alpha target:** secondary storage replicas (encrypted, server-blind)
+- **Alpha target:** recovery nodes (encrypted copies only)
 
 ## Threat Categories
 
@@ -51,94 +53,94 @@ This document describes threats against Sovereign Founder OS and Sovereign Runti
 **Description:** Malicious instructions embedded in external content attempt to override system policy, exfiltrate data, or trigger unauthorized tool use.
 
 **Mitigations:**
-- Untrusted Content Zone — external content is data, never instructions
-- Planner/Executor separation
-- Policy Engine makes all execution decisions deterministically
-- Capability tokens scope every tool call
-- Adversarial test suite (required for Alpha release)
+- **Alpha target:** Untrusted Content Zone — external content is data, never instructions
+- **Alpha target:** Planner/Executor separation
+- **Current:** Policy Engine makes implemented authorization decisions deterministically
+- **Current foundation:** Capability V2 scopes one publisher-verified pure-compute invocation exactly
+- **Current foundation / Alpha target:** adversarial fixtures exist; the full Alpha gauntlet remains incomplete
 
 ### T2: Tool Privilege Escalation
 
 **Description:** An agent or plugin attempts to expand its permissions beyond what was granted.
 
 **Mitigations:**
-- Short-lived capability tokens bound to specific resources
-- Tokens cannot be self-issued by agents
-- Plugin manifest enforcement
-- WASM/container isolation
-- 100% tool calls require valid capability token (success metric)
+- **Current foundation:** short-lived, one-use Capability V2 binds the exact artifact, operation, input commitments, and resource commitments; replay state is process-local
+- **Current:** Authority and Publisher signing roles are distinct, and an AI agent cannot make its own key trusted
+- **Current foundation:** strict publisher manifest enforcement and import-free Core Wasm isolation
+- **Alpha target:** durable token revocation, container/micro-VM backends, and reviewed effectful host interfaces
+- **Alpha target:** 100% of real tool effects require a valid capability and durable evidence
 
 ### T3: Credential Exfiltration
 
 **Description:** An agent, plugin, or compromised model path attempts to read and transmit secrets.
 
 **Mitigations:**
-- Red-zone data never leaves device
-- Agents never hold root keys
-- Sandbox default: no network, read-only filesystem
-- Data Disclosure Record for every cloud model call
-- Output scanning for sensitive patterns
+- **Alpha target:** Red-zone data never leaves the device through any model or tool path
+- **Alpha target:** agents never hold root keys
+- **Current:** both Wasmtime paths expose no filesystem, network, environment, WASI, or other host imports
+- **Alpha target:** Data Disclosure Record for every cloud model call
+- **Alpha target:** output scanning for sensitive patterns
 
 ### T4: Model Provider Failure or Revocation
 
 **Description:** Primary AI provider becomes unavailable, changes terms, or revokes API access.
 
 **Mitigations:**
-- Multi-vendor Model Mesh with automatic failover
-- Local model degradation path
-- No business-critical state stored at provider
-- Workflows recoverable from local checkpoints
+- **Alpha target:** multi-vendor Model Mesh with automatic failover
+- **Alpha target:** local model degradation path
+- **Design invariant / Alpha target:** no business-critical state stored only at a provider
+- **Alpha target:** workflows recoverable from local checkpoints
 
 ### T5: Single Point of Failure
 
 **Description:** Failure of one device, cloud, database, or key destroys business continuity.
 
 **Mitigations:**
-- Public Single Point of Failure Registry with documented countermeasures
-- Encrypted multi-device replication (Levels 1–4)
-- Event-sourced state with signed checkpoints
-- Export and offline recovery without official servers
+- **Alpha target:** public Single Point of Failure Registry with documented countermeasures
+- **Alpha target:** encrypted multi-device replication (Levels 1–4)
+- **Alpha target:** event-sourced state with signed checkpoints
+- **Alpha target:** export and offline recovery without official servers
 
 ### T6: Audit Log Tampering
 
 **Description:** An attacker or compromised agent attempts to alter or delete operation history.
 
 **Mitigations:**
-- Append-only signed event ledger
-- Hash chain linking events
-- Periodic Merkle root anchoring (future)
-- Auditor role cannot execute external actions
-- Tamper detection in recovery validation
+- **Current:** append-only signed event-ledger prototype with a hash chain
+- **Current primitive / migration pending:** a role-separated Audit COSE signer exists; the ledger still uses its legacy device-signature encoding
+- **Alpha target:** periodic Merkle-root anchoring
+- **Alpha target:** an Auditor role that cannot execute external actions
+- **Alpha target:** tamper detection during recovery validation
 
 ### T7: Split-Brain in Distributed Mode
 
 **Description:** Two nodes simultaneously issue conflicting authoritative writes (contracts, payments, permissions).
 
 **Mitigations:**
-- Leader lease with fencing tokens
-- Authoritative vs. eventually-consistent data separation
-- Idempotency keys and version checks
-- Multi-node approval for high-value operations
+- **Alpha target:** leader lease with fencing tokens
+- **Alpha target:** authoritative vs. eventually-consistent data separation
+- **Current foundation:** V2 idempotency and replay checks within one process only
+- **Alpha target:** durable cross-process idempotency, version checks, and multi-node approval for high-value operations
 
 ### T8: Supply Chain Attack (Plugins/Dependencies)
 
 **Description:** Malicious or compromised plugin, dependency, or MCP server.
 
 **Mitigations:**
-- Plugin manifest with signature verification
-- Supply chain scanning (SBOM, dependency audit)
-- SLSA-aligned build provenance
-- Adversarial plugin fixtures in CI
-- Plugin default-deny network and filesystem
+- **Current foundation:** role-separated publisher manifest signature verification and exact artifact digest binding
+- **Current:** dependency audit and dependency-review CI checks
+- **Alpha target:** SBOM and SLSA-aligned build provenance
+- **Current foundation / Alpha target:** adversarial plugin fixtures exist; the full completion gate remains incomplete
+- **Current:** pure-compute plugins receive no network, filesystem, environment, WASI, or other host imports
 
 ### T9: Memory Poisoning
 
 **Description:** Adversarial content corrupts long-term agent memory or enterprise state.
 
 **Mitigations:**
-- Memory writes validated by independent checker
-- State changes only through signed events
-- Source attribution on all artifacts
+- **Alpha target:** memory writes validated by an independent checker
+- **Alpha target:** authoritative state changes only through signed events
+- **Alpha target:** source attribution on all business artifacts
 
 ## Automation Levels (Risk Control)
 
@@ -162,12 +164,14 @@ Financial, legal, and irreversible operations: **maximum L2**.
 
 Alpha release must pass:
 
-- [ ] Prompt injection cannot change system permissions
-- [ ] Malicious plugin cannot read undeclared resources
-- [ ] Red data cannot enter cloud model requests
-- [ ] Token replay is rejected
+- [x] Current deterministic-policy fixture rejects prompt attempts to self-authorize high-risk actions
+- [x] Current import-free Wasm fixtures cannot access filesystem, network, environment, WASI, or undeclared host interfaces
+- [x] Current policy fixture rejects Red data sent through a cloud-labelled tool
+- [x] Capability V2 rejects same-process replay and idempotency conflicts
+- [ ] Capability revocation and replay remain rejected across restart and concurrent processes
+- [ ] Full prompt-injection and data-disclosure paths pass the Alpha gauntlet
 - [ ] Primary model failure does not block data access
-- [ ] Audit log modification is detectable
+- [x] Current audit-ledger fixture detects hash-chain/signature modification
 - [ ] Recovery works without official cloud servers
 
 Chaos CLI commands for reproducible testing — see [ROADMAP.md](ROADMAP.md) Stage 5.

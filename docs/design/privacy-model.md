@@ -1,5 +1,7 @@
 # Privacy Model
 
+> **Status:** Target design. Implemented guarantees are documented in [ARCHITECTURE.md](../../ARCHITECTURE.md) and the relevant RFCs.
+
 ## Design Philosophy
 
 We do not claim "absolute security." We pursue:
@@ -177,6 +179,6 @@ Clicking reveals: recipient, content, purpose, retention, model used, and local-
 
 ## Further Reading
 
-- [THREAT_MODEL.md](THREAT_MODEL.md)
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [docs/zh/02-Sovereign-Founder-OS-主权升级.md](docs/zh/02-Sovereign-Founder-OS-主权升级.md) — full privacy and cryptography specification (Chinese)
+- [THREAT_MODEL.md](../../THREAT_MODEL.md)
+- [ARCHITECTURE.md](../../ARCHITECTURE.md)
+- [Historical sovereignty design](../archive/zh/02-Sovereign-Founder-OS-主权升级.md) (Chinese)

@@ -109,10 +109,10 @@ fn cmd_init() -> Result<(), Box<dyn std::error::Error>> {
     if !device_path.exists() {
         let device = DeviceIdentity::generate();
         device.save(&device_path)?;
-        println!("device identity: {}", device.device_id);
+        println!("device identity: {}", device.device_id());
     } else {
         let device = DeviceIdentity::load(&device_path)?;
-        println!("device identity: {} (existing)", device.device_id);
+        println!("device identity: {} (existing)", device.device_id());
     }
 
     let vault = Vault::init(root.join("vault"))?;
@@ -138,7 +138,7 @@ fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     let ledger_path = root.join("ledger.json");
     if ledger_path.exists() {
         let device = DeviceIdentity::load(&root.join("device.json"))?;
-        let ledger = AuditLedger::load(&ledger_path, &device.public_key_b64)?;
+        let ledger = AuditLedger::load(&ledger_path, device.public_key_b64())?;
         println!("audit events: {}", ledger.events().len());
     }
     Ok(())
@@ -202,7 +202,7 @@ fn cmd_demo() -> Result<(), Box<dyn std::error::Error>> {
     let decision_hash = hash_bytes(&serde_json::to_vec(&decision)?);
     let ledger_path = root.join("ledger.json");
     let mut ledger = if ledger_path.exists() {
-        AuditLedger::load(&ledger_path, &device.public_key_b64)?
+        AuditLedger::load(&ledger_path, device.public_key_b64())?
     } else {
         AuditLedger::new()
     };

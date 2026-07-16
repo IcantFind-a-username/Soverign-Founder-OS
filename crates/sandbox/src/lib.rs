@@ -1,9 +1,18 @@
 mod wasm;
 
+use std::collections::BTreeSet;
+
 use chrono::Utc;
+use sovereign_artifact::{OperationSelector, PreparedInvocation};
+use sovereign_capability::v2::{
+    CapabilityTokenV2, CapabilityV2Error, CapabilityV2ValidationContext, CapabilityValidatorV2,
+    TrustedClock as CapabilityV2Clock,
+};
 use sovereign_capability::{CapabilityError, CapabilityValidator, ValidationContext};
 use sovereign_contracts::CapabilityToken;
+use sovereign_policy::PolicyAuthorizationV2;
 use thiserror::Error;
+use uuid::Uuid;
 
 pub use wasm::{WasmExecutionResult, WasmSandbox, WasmSandboxLimits, DEFAULT_ENTRYPOINT};
 
@@ -11,8 +20,12 @@ pub use wasm::{WasmExecutionResult, WasmSandbox, WasmSandboxLimits, DEFAULT_ENTR
 pub enum SandboxError {
     #[error("capability error: {0}")]
     Capability(#[from] CapabilityError),
+    #[error("Capability V2 authorization failed: {0}")]
+    CapabilityV2(#[from] CapabilityV2Error),
     #[error("tool not allowed: {0}")]
     ToolNotAllowed(String),
+    #[error("verified operation is not present in the exact structured allowlist")]
+    VerifiedOperationNotAllowed { selector: OperationSelector },
     #[error("execution failed: {0}")]
     ExecutionFailed(String),
     #[error("invalid sandbox runtime limits")]
@@ -69,6 +82,7 @@ pub struct WasmExecutionRequest<'a> {
 pub enum ExecutionRuntime {
     InProcessSimulation,
     WasmtimeCorePhaseA,
+    WasmtimeVerifiedPureComputeV2,
 }
 
 impl ExecutionRuntime {
@@ -76,7 +90,10 @@ impl ExecutionRuntime {
     /// control-flow boundary. It does not imply artifact trust, durable audit,
     /// effect authorization, or production readiness.
     pub fn is_isolated(self) -> bool {
-        matches!(self, Self::WasmtimeCorePhaseA)
+        matches!(
+            self,
+            Self::WasmtimeCorePhaseA | Self::WasmtimeVerifiedPureComputeV2
+        )
     }
 
     pub fn is_production_ready(self) -> bool {
@@ -87,6 +104,7 @@ impl ExecutionRuntime {
         match self {
             Self::InProcessSimulation => "in_process_simulation",
             Self::WasmtimeCorePhaseA => "wasmtime_core_phase_a",
+            Self::WasmtimeVerifiedPureComputeV2 => "wasmtime_verified_pure_compute_v2",
         }
     }
 }
@@ -95,6 +113,103 @@ impl ExecutionRuntime {
 pub struct ExecutionResult {
     pub output: serde_json::Value,
     pub runtime: ExecutionRuntime,
+}
+
+/// Exact V2 execution request. The executable and canonical input bindings
+/// come only from `invocation`; this type deliberately has no module bytes,
+/// module path, entrypoint, raw input, tool string, or resource override.
+///
+/// V1 tokens are a different type and cannot enter this request:
+///
+/// ```compile_fail
+/// use sovereign_capability::v2::CapabilityTokenV2;
+/// use sovereign_contracts::CapabilityToken;
+///
+/// fn v1_is_not_v2(token: &CapabilityToken) -> &CapabilityTokenV2 {
+///     token
+/// }
+/// ```
+///
+/// Raw executable bytes cannot be attached to this request:
+///
+/// ```compile_fail
+/// use sovereign_sandbox::VerifiedExecutionRequest;
+///
+/// fn smuggle_module(request: &mut VerifiedExecutionRequest<'_>, bytes: &[u8]) {
+///     request.module = bytes;
+/// }
+/// ```
+pub struct VerifiedExecutionRequest<'a> {
+    pub token: &'a CapabilityTokenV2,
+    pub invocation: &'a PreparedInvocation,
+    pub venture_id: &'a str,
+    pub subject_id: &'a str,
+    pub session_id: Uuid,
+    pub policy_decision: &'a PolicyAuthorizationV2,
+}
+
+/// Capability V2 executor for publisher-verified, import-free pure-compute artifacts.
+///
+/// The allowlist is an exact set of structured selectors. There are no dotted
+/// string aliases, prefixes, or wildcards. Authorization is consumed before
+/// Wasmtime sees the artifact, so a guest compile, instantiation, or runtime
+/// failure still spends the one-use capability.
+///
+/// The current core Wasm ABI is `() -> i32`. Canonical input is authenticated
+/// by the capability, but this foundation does not claim to deliver that input
+/// into guest memory. It also exposes no host functions or external effects,
+/// and never falls back to the V1 or simulated executors.
+#[derive(Debug)]
+pub struct VerifiedSandboxExecutor<C: CapabilityV2Clock> {
+    validator: CapabilityValidatorV2<C>,
+    allowed_operations: BTreeSet<OperationSelector>,
+    wasm: WasmSandbox,
+}
+
+impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
+    pub fn new(
+        allowed_operations: Vec<OperationSelector>,
+        validator: CapabilityValidatorV2<C>,
+    ) -> Result<Self, SandboxError> {
+        Self::with_wasm_limits(allowed_operations, validator, WasmSandboxLimits::default())
+    }
+
+    pub fn with_wasm_limits(
+        allowed_operations: Vec<OperationSelector>,
+        validator: CapabilityValidatorV2<C>,
+        wasm_limits: WasmSandboxLimits,
+    ) -> Result<Self, SandboxError> {
+        Ok(Self {
+            validator,
+            allowed_operations: allowed_operations.into_iter().collect(),
+            wasm: WasmSandbox::new(wasm_limits)?,
+        })
+    }
+
+    pub fn execute(
+        &mut self,
+        request: VerifiedExecutionRequest<'_>,
+    ) -> Result<WasmExecutionResult, SandboxError> {
+        let selector = request.invocation.operation();
+        if !self.allowed_operations.contains(selector) {
+            return Err(SandboxError::VerifiedOperationNotAllowed {
+                selector: selector.clone(),
+            });
+        }
+
+        self.validator.authorize_and_consume(
+            request.token,
+            CapabilityV2ValidationContext {
+                venture_id: request.venture_id,
+                subject_id: request.subject_id,
+                session_id: request.session_id,
+                policy_decision: request.policy_decision,
+                prepared_invocation: request.invocation,
+            },
+        )?;
+
+        self.wasm.execute_verified(request.invocation)
+    }
 }
 
 /// Capability-gated executor with explicit simulated and isolated paths.

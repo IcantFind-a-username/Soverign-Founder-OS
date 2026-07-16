@@ -275,18 +275,18 @@ fn tampered_capability_and_audit_evidence_are_rejected() {
     events[0].event_hash = hash_event_body(&AuditEventBody::from(&events[0]));
 
     assert!(matches!(
-        AuditLedger::from_events(events, &device.public_key_b64),
+        AuditLedger::from_events(events, device.public_key_b64()),
         Err(LedgerError::Identity(_))
     ));
 
     let attacker = DeviceIdentity::generate();
     let mut events = original_events;
     events[0].action = "file.delete".into();
-    events[0].device_public_key_b64 = attacker.public_key_b64.clone();
+    events[0].device_public_key_b64 = attacker.public_key_b64().to_owned();
     events[0].event_hash = hash_event_body(&AuditEventBody::from(&events[0]));
-    events[0].device_signature = Some(attacker.sign(events[0].event_hash.as_bytes()));
+    events[0].device_signature = Some(attacker.sign_legacy_v1(events[0].event_hash.as_bytes()));
     assert!(matches!(
-        AuditLedger::from_events(events, &device.public_key_b64),
+        AuditLedger::from_events(events, device.public_key_b64()),
         Err(LedgerError::UntrustedDevice(_))
     ));
 }

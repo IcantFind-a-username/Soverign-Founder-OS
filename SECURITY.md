@@ -95,5 +95,5 @@ Out of scope:
 ## Further Reading
 
 - [THREAT_MODEL.md](THREAT_MODEL.md)
-- [PRIVACY_MODEL.md](PRIVACY_MODEL.md)
+- [Privacy model](docs/design/privacy-model.md)
 - `security/` *(planned)* — attack trees and disclosures

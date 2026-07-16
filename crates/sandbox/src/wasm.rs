@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 use wasmtime::{Config, Engine, Instance, Module, ResourceLimiter, Store, Trap};
 
+use sovereign_artifact::PreparedInvocation;
+
 use crate::{ExecutionRuntime, SandboxError};
 
 pub const DEFAULT_ENTRYPOINT: &str = "sovereign_run";
@@ -189,10 +191,36 @@ impl WasmSandbox {
         self.execute_entrypoint(module_bytes, DEFAULT_ENTRYPOINT)
     }
 
+    /// Crate-private V2 path: the executable can only be sourced from the
+    /// immutable artifact owned by a publisher-verified prepared invocation.
+    pub(crate) fn execute_verified(
+        &self,
+        invocation: &PreparedInvocation,
+    ) -> Result<WasmExecutionResult, SandboxError> {
+        self.execute_entrypoint_with_runtime(
+            invocation.artifact().bytes(),
+            DEFAULT_ENTRYPOINT,
+            ExecutionRuntime::WasmtimeVerifiedPureComputeV2,
+        )
+    }
+
     pub fn execute_entrypoint(
         &self,
         module_bytes: &[u8],
         entrypoint: &str,
+    ) -> Result<WasmExecutionResult, SandboxError> {
+        self.execute_entrypoint_with_runtime(
+            module_bytes,
+            entrypoint,
+            ExecutionRuntime::WasmtimeCorePhaseA,
+        )
+    }
+
+    fn execute_entrypoint_with_runtime(
+        &self,
+        module_bytes: &[u8],
+        entrypoint: &str,
+        runtime: ExecutionRuntime,
     ) -> Result<WasmExecutionResult, SandboxError> {
         if self
             .epoch_worker
@@ -279,7 +307,7 @@ impl WasmSandbox {
         Ok(WasmExecutionResult {
             exit_code,
             fuel_consumed: self.limits.fuel.saturating_sub(remaining_fuel),
-            runtime: ExecutionRuntime::WasmtimeCorePhaseA,
+            runtime,
         })
     }
 

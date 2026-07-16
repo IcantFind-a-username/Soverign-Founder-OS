@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/contracts",
     "crates/identity",
+    "crates/artifact",
     "crates/audit-ledger",
     "crates/policy",
     "crates/capability",
@@ -22,6 +23,7 @@ repository = "https://github.com/IcantFind-a-username/Sovereign-Founder-OS"
 [workspace.dependencies]
 sovereign-contracts = { path = "crates/contracts" }
 sovereign-identity = { path = "crates/identity" }
+sovereign-artifact = { path = "crates/artifact" }
 sovereign-audit-ledger = { path = "crates/audit-ledger" }
 sovereign-policy = { path = "crates/policy" }
 sovereign-capability = { path = "crates/capability" }
@@ -42,6 +44,8 @@ base64 = "0.22"
 dirs = "5"
 clap = { version = "4", features = ["derive"] }
 wasmtime = { version = "=46.0.1", default-features = false, features = ["cranelift", "runtime", "std"] }
+coset = "=0.4.2"
+serde_json_canonicalizer = "=0.3.2"
 
 [profile.release]
 lto = true

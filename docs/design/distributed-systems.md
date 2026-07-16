@@ -1,5 +1,7 @@
 # Distributed Systems
 
+> **Status:** Target design. Implemented guarantees are documented in [ARCHITECTURE.md](../../ARCHITECTURE.md) and the relevant RFCs.
+
 ## Design Goal
 
 "Distributed" in Sovereign Founder OS does not mean putting all data on a blockchain. It means:
@@ -178,10 +180,10 @@ Users must be able to recover without official project servers:
 4. Replay event log to reconstruct state
 5. Resume workflows from last checkpoint
 
-Recovery is tested continuously via the Chaos CLI — see [ROADMAP.md](ROADMAP.md).
+Recovery is intended to be tested continuously via the planned Chaos CLI — see [ROADMAP.md](../../ROADMAP.md).
 
 ## Further Reading
 
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [THREAT_MODEL.md](THREAT_MODEL.md) — T7 Split-Brain
-- [docs/zh/03-开源项目企划书-v0.1.md](docs/zh/03-开源项目企划书-v0.1.md) — Section 6 (Chinese)
+- [ARCHITECTURE.md](../../ARCHITECTURE.md)
+- [THREAT_MODEL.md](../../THREAT_MODEL.md) — T7 Split-Brain
+- [Historical project plan](../archive/zh/03-开源项目企划书-v0.1.md) — Section 6 (Chinese)

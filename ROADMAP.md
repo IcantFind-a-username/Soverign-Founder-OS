@@ -24,10 +24,10 @@ Sovereign Runtime secure kernel
 ### Stage 0: Project Constitution — Complete
 
 **Deliverables:**
-- [x] VISION.md
+- [x] Product vision and positioning consolidated in README.md
 - [x] ARCHITECTURE.md
 - [x] THREAT_MODEL.md
-- [x] PRIVACY_MODEL.md
+- [x] Privacy target design (`docs/design/privacy-model.md`)
 - [x] ROADMAP.md
 - [x] LICENSE (Apache 2.0)
 - [ ] RFC: canonical task contract
@@ -48,11 +48,18 @@ Sovereign Runtime secure kernel
 - [x] Append-only signed audit ledger (`crates/audit-ledger`)
 - [ ] WASM/container isolation for sandbox
   - [x] Phase A: import-free Wasmtime mechanics with guest execution ceilings (non-production)
-  - [ ] Phase B: signed artifacts, exact invocation binding, Capability V2
+  - [ ] Phase B: verified artifact and invocation boundary
+    - [x] Role-separated COSE/JCS publisher manifest verification
+    - [x] Immutable artifact snapshot, strict schema/resource binding, and `PreparedInvocation`
+    - [x] Exact-bound Capability V2 and verified pure-compute Core Wasm path (process-local)
+    - [ ] Locally signed admission record and content-addressed artifact store
+    - [ ] Killable compilation worker and trusted compiled cache
+    - [ ] Component/WIT input ABI
   - [ ] Phase C: durable authorization and crash-safe evidence
   - [ ] Phase D: reviewed WIT host interfaces and high-risk backend
 - [ ] Adversarial integration tests
   - [x] Phase A: malicious Wasm import, loop, memory, table, ABI, and state tests
+  - [x] Phase B foundation: manifest/artifact/input substitution, strict fields, trust state, V1/V2 separation, same-process replay, and backend downgrade tests
   - [ ] Full Stage 1 authorization, replay, audit, and backend downgrade suite
 
 **Exit criteria:** A malicious agent cannot read files or execute external actions without authorization.
@@ -249,4 +256,4 @@ Minimum requirements before public Alpha:
 5. Security Center
 6. Settings / Models / Backup
 
-See [docs/zh/04-GUI设计.md](docs/zh/04-GUI设计.md) for complete UI specification.
+See [docs/product/gui-design.zh-CN.md](docs/product/gui-design.zh-CN.md) for the current UI design draft.

@@ -1,3 +1,11 @@
+//! Capability authorization protocols.
+//!
+//! The original `CapabilityToken` API is retained as explicit V1 compatibility
+//! for the Phase A, pure-compute path. New code must use [`v2`] when binding an
+//! exact prepared invocation.
+
+pub mod v2;
+
 use chrono::{DateTime, Duration, Utc};
 use sovereign_contracts::{CapabilityToken, CapabilityTokenBody, PolicyDecision};
 use sovereign_identity::DeviceIdentity;
@@ -50,6 +58,9 @@ pub struct CapabilityIssuer {
     identity: DeviceIdentity,
 }
 
+/// Explicit name for the legacy Phase A issuer.
+pub type CapabilityIssuerV1 = CapabilityIssuer;
+
 impl CapabilityIssuer {
     pub fn new() -> Self {
         Self {
@@ -58,7 +69,7 @@ impl CapabilityIssuer {
     }
 
     pub fn public_key_b64(&self) -> &str {
-        &self.identity.public_key_b64
+        self.identity.public_key_b64()
     }
 
     pub fn issue(
@@ -92,10 +103,10 @@ impl CapabilityIssuer {
             issued_at: now,
             expires_at: now + options.ttl,
             policy_decision_id: decision.decision_id,
-            issuer_public_key_b64: self.identity.public_key_b64.clone(),
+            issuer_public_key_b64: self.identity.public_key_b64().to_owned(),
             signature_b64: String::new(),
         };
-        token.signature_b64 = self.identity.sign(&token_signing_bytes(&token));
+        token.signature_b64 = self.identity.sign_legacy_v1(&token_signing_bytes(&token));
         Ok(token)
     }
 }
@@ -111,6 +122,9 @@ pub struct CapabilityValidator {
     trusted_issuer_public_key_b64: String,
     uses: std::collections::HashMap<Uuid, u32>,
 }
+
+/// Explicit name for the process-local legacy Phase A validator.
+pub type CapabilityValidatorV1 = CapabilityValidator;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ValidationContext<'a> {
@@ -138,7 +152,7 @@ impl CapabilityValidator {
         if token.issuer_public_key_b64 != self.trusted_issuer_public_key_b64 {
             return Err(CapabilityError::UntrustedIssuer);
         }
-        DeviceIdentity::verify(
+        DeviceIdentity::verify_legacy_v1(
             &token.issuer_public_key_b64,
             &token_signing_bytes(token),
             &token.signature_b64,

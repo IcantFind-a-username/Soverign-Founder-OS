@@ -8,14 +8,17 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+sovereign-artifact = { workspace = true }
 sovereign-capability = { workspace = true }
 sovereign-contracts = { workspace = true }
+sovereign-policy = { workspace = true }
 chrono = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+uuid = { workspace = true }
 wasmtime = { workspace = true }
 
 [dev-dependencies]
-sovereign-policy = { workspace = true }
-uuid = { workspace = true }
+serde_json_canonicalizer = { workspace = true }
+sovereign-identity = { workspace = true }
 wat = "1"

@@ -1,6 +1,6 @@
 [package]
-name = "sovereign-identity"
-description = "Device identity and signing for Sovereign Runtime"
+name = "sovereign-artifact"
+description = "Verified plugin artifacts and exact invocation preparation for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,16 +8,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ed25519-dalek = { workspace = true }
-rand = { workspace = true }
+hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_json_canonicalizer = { workspace = true }
 sha2 = { workspace = true }
-hex = { workspace = true }
+sovereign-identity = { workspace = true }
 thiserror = { workspace = true }
-base64 = { workspace = true }
-coset = { workspace = true }
-libc = "0.2"
 
 [dev-dependencies]
 serde_json = { workspace = true }

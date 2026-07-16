@@ -81,12 +81,12 @@ impl AuditLedger {
         device: &DeviceIdentity,
     ) -> Result<AuditEvent, LedgerError> {
         match &self.trusted_device_public_key_b64 {
-            Some(key) if key != &device.public_key_b64 => {
+            Some(key) if key != device.public_key_b64() => {
                 return Err(LedgerError::DeviceMismatch);
             }
             Some(_) => {}
             None => {
-                self.trusted_device_public_key_b64 = Some(device.public_key_b64.clone());
+                self.trusted_device_public_key_b64 = Some(device.public_key_b64().to_owned());
             }
         }
 
@@ -105,12 +105,12 @@ impl AuditLedger {
             payload_hash,
             previous_event_hash,
             policy_decision_hash: input.policy_decision_hash,
-            device_public_key_b64: device.public_key_b64.clone(),
+            device_public_key_b64: device.public_key_b64().to_owned(),
         };
 
         let event_hash = hash_event_body(&body);
         let sign_message = event_hash.as_bytes();
-        let device_signature = Some(device.sign(sign_message));
+        let device_signature = Some(device.sign_legacy_v1(sign_message));
 
         let event = AuditEvent {
             event_id: body.event_id,
@@ -151,7 +151,7 @@ impl AuditLedger {
                 .device_signature
                 .as_deref()
                 .ok_or(LedgerError::MissingSignature(event.event_id))?;
-            DeviceIdentity::verify(
+            DeviceIdentity::verify_legacy_v1(
                 &event.device_public_key_b64,
                 event.event_hash.as_bytes(),
                 signature,
@@ -256,7 +256,7 @@ mod tests {
             )
             .unwrap();
         ledger.save(&path).unwrap();
-        let loaded = AuditLedger::load(&path, &device.public_key_b64).unwrap();
+        let loaded = AuditLedger::load(&path, device.public_key_b64()).unwrap();
         assert_eq!(loaded.events().len(), 1);
     }
 }

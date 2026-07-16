@@ -29,25 +29,30 @@ The current implementation focuses on the Sovereign Runtime secure kernel. That 
 
 ## Current Stage 1 Architecture
 
-The executable workspace currently consists of the Rust CLI, seven Runtime crates, and a cross-crate adversarial test package:
+The executable workspace currently consists of the Rust CLI, eight Runtime crates, and a cross-crate adversarial test package:
 
 ```text
 sovereign-cli
 ├── contracts
 ├── identity
+├── artifact
+│   └── publisher COSE manifest → VerifiedArtifact → PreparedInvocation
 ├── policy
 ├── capability
+│   ├── Capability V1 (legacy Phase A compatibility)
+│   └── exact-bound, one-use Capability V2 (process-local state)
 ├── vault
 ├── audit-ledger
 └── sandbox
-    └── import-free Wasmtime path (Phase A)
+    ├── import-free Wasmtime path (Phase A)
+    └── verified pure-compute V2 path (Phase B foundation)
 
 sovereign-adversarial-tests
 ```
 
-Stage 1 currently provides prototypes for device signing, deterministic policy decisions, scoped and expiring capability tokens, encrypted local storage, a signed append-only audit ledger, and capability-gated sandbox execution. The isolated Wasmtime path permits pure computation only and applies fuel, epoch, memory, table, and instance limits. It exposes no host imports or WASI.
+Stage 1 currently provides prototypes for role-separated signing and trust stores, deterministic policy decisions, scoped and expiring capability tokens, encrypted local storage, a signed append-only audit ledger, and capability-gated sandbox execution. The Phase B foundation verifies a publisher-signed manifest, snapshots the exact artifact bytes, validates strict input and resource grants, prepares canonical invocation commitments, and binds them into Capability V2 before the verified executor starts. Both Wasmtime paths permit pure computation only, apply fuel, epoch, memory, table, and instance limits, and expose no host imports or WASI.
 
-The current sandbox is not a production plugin boundary: artifact compilation remains in-process, the mechanical `sandbox-check` uses an ephemeral issuer, and no guest can yet invoke an audited external side effect. The Founder Command Center, Sovereign Enterprise Graph, Crew Orchestrator, Model Mesh, Domain Packs, Recovery Mesh, durable authorization, and production host interfaces are not implemented yet. See [ROADMAP.md](ROADMAP.md) and [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
+`VerifiedArtifact` proves publisher provenance and byte identity; it is not the target locally signed `AdmittedArtifact`. The current sandbox is not a production plugin boundary: there is no local admission record or content-addressed artifact store, compilation remains in-process, replay accounting is process-local, the core-Wasm ABI does not receive canonical input, the mechanical `sandbox-check` uses an ephemeral issuer, and no guest can invoke an audited external side effect. The Founder Command Center, Sovereign Enterprise Graph, Crew Orchestrator, Model Mesh, Domain Packs, Recovery Mesh, durable authorization, and production host interfaces are not implemented yet. See [ROADMAP.md](ROADMAP.md) and [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
 
 The remaining sections describe the target architecture unless they explicitly state a current Stage 1 capability.
 
@@ -205,7 +210,7 @@ Automatic failover: primary provider → secondary provider → local model degr
 
 ## Plugin Architecture (In Progress)
 
-The target architecture treats plugins as **untrusted by default**. Stage 1 currently implements only the import-free Wasmtime Phase A path described above.
+The target architecture treats plugins as **untrusted by default**. Stage 1 currently implements the import-free Wasmtime Phase A path plus a pure-compute, process-local Phase B foundation for publisher verification and exact invocation binding.
 
 - Signed manifest declaring exact permissions
 - Low-risk plugins: WASM/WASI sandbox
@@ -262,11 +267,11 @@ sovereign/
 | Plugins may run in-process | Plugins isolated by default |
 | Single gateway | Multi-node state and recovery mesh |
 
-See [docs/why-not-another-agent.md](docs/why-not-another-agent.md) for the full positioning.
+See [Why Not Another Agent?](docs/positioning/why-not-another-agent.md) for the full positioning.
 
 ## Further Reading
 
-- [DISTRIBUTED_SYSTEMS.md](DISTRIBUTED_SYSTEMS.md) — replication, failover, split-brain prevention
+- [Distributed systems](docs/design/distributed-systems.md) — target replication, failover, and split-brain prevention design
 - [THREAT_MODEL.md](THREAT_MODEL.md) — adversary model and mitigations
-- [PRIVACY_MODEL.md](PRIVACY_MODEL.md) — Red/Amber/Green data zones
-- [docs/zh/03-开源项目企划书-v0.1.md](docs/zh/03-开源项目企划书-v0.1.md) — complete Chinese specification
+- [Privacy model](docs/design/privacy-model.md) — target Red/Amber/Green data zones
+- [Historical Chinese project plan](docs/archive/zh/03-开源项目企划书-v0.1.md) — early design context, not a current specification

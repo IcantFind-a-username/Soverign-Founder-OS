@@ -87,6 +87,7 @@ We may provide OpenClaw Skill compatibility — importing existing skills into a
 
 ## Further Reading
 
-- [VISION.md](../VISION.md)
-- [ARCHITECTURE.md](../ARCHITECTURE.md)
-- [docs/zh/03-开源项目企划书-v0.1.md](zh/03-开源项目企划书-v0.1.md) — Section 3: detailed comparison (Chinese)
+- [README.md](../../README.md)
+- [MANIFESTO.md](../../MANIFESTO.md)
+- [ARCHITECTURE.md](../../ARCHITECTURE.md)
+- [Historical project plan](../archive/zh/03-开源项目企划书-v0.1.md) — Section 3: detailed comparison (Chinese)

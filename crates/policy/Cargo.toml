@@ -9,7 +9,10 @@ repository.workspace = true
 
 [dependencies]
 sovereign-contracts = { workspace = true }
+sovereign-artifact = { workspace = true }
 chrono = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

@@ -1,22 +1,9 @@
 # Documentation Language Policy
 
-## Strategy
+English is the shared working language for root documentation, code, APIs, commits, issues, pull requests, and RFCs. This keeps the project accessible to the broadest open-source contributor community.
 
-| Layer | Language | Purpose |
-| --- | --- | --- |
-| Root docs (`README`, `VISION`, `ARCHITECTURE`, etc.) | **English** | International discovery, citations, contributors |
-| Complete blueprint (`docs/zh/`) | **中文** | Full product and engineering specifications |
-| Code, APIs, commits, issues | **English** | Professional, neutral, tooling-friendly |
-| User-facing UI (future) | **Bilingual** | EN + 中文 |
+Documents may use another language when that language is important to their audience or subject. Such documents must be clearly labelled and linked from the English documentation index. Jurisdiction Packs may use the local language, with an English summary.
 
-## Rules
+The language of a document does not determine its authority. Current core documents and accepted RFCs are authoritative; archived early designs are historical context in any language.
 
-1. English docs are the **entry point** for the global open source community.
-2. Chinese docs in `docs/zh/` are the **authoritative complete blueprint** — nothing is hidden.
-3. Do not mix languages in the same file.
-4. When a Chinese spec gains an English counterpart, link both ways in `docs/INDEX.md`.
-
-## For Contributors
-
-- Propose architectural changes in English (RFCs).
-- Jurisdiction Packs may be written in the local language with English summaries.
+Avoid maintaining two supposedly identical specifications in different languages. Prefer one source of truth plus translations that state which source they follow.

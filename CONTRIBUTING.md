@@ -4,10 +4,21 @@ Thank you for your interest in Sovereign Founder OS. This project welcomes contr
 
 ## Before You Start
 
-1. Read [VISION.md](VISION.md) and [ARCHITECTURE.md](ARCHITECTURE.md)
-2. Review [THREAT_MODEL.md](THREAT_MODEL.md) for security constraints
-3. Check [ROADMAP.md](ROADMAP.md) for current stage and priorities
-4. Look at open issues before starting new work
+1. Read the [README](README.md) for product scope and current status
+2. Read the relevant part of [ARCHITECTURE.md](ARCHITECTURE.md)
+3. Review [THREAT_MODEL.md](THREAT_MODEL.md) for security-sensitive work
+4. Check [ROADMAP.md](ROADMAP.md), the relevant [RFC](rfcs/), and open issues
+
+## Find a Useful First Contribution
+
+Good first contributions are small, testable, and connected to the current stage. Useful starting points include:
+
+- Reproducing a bug and adding a failing test
+- Improving unclear setup, architecture, or threat-model documentation
+- Adding adversarial tests for an existing security invariant
+- Implementing a scoped issue whose acceptance criteria are already agreed
+
+Open an issue before beginning a large feature or architectural change. This lets maintainers confirm scope and point you to the source-of-truth document before you invest significant time.
 
 ## How to Contribute
 
@@ -22,10 +33,13 @@ Thank you for your interest in Sovereign Founder OS. This project welcomes contr
 ### Documentation
 
 Documentation improvements are valuable, especially:
+
 - Threat model refinements
 - Architecture RFCs
 - Jurisdiction pack specifications
 - Security test cases
+
+Keep each fact in one authoritative document and link to it elsewhere instead of copying it. Clearly label proposed or target behavior so readers do not mistake it for the current implementation.
 
 ### Security Research
 

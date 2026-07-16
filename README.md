@@ -43,6 +43,12 @@ Users see goals, decisions, approvals, progress, and the next action—not agent
 
 The **Sovereign Enterprise Graph** will be the structured source of truth beneath these modules: the founder, products, customers, projects, contracts, invoices, knowledge, metrics, risks, and decisions—not a pile of chat history.
 
+## Scope and First Users
+
+The first users are people exploring or operating a one-person business: freelancers, independent consultants and creators, digital service providers, and Micro-SaaS founders. The initial jurisdiction focus is Singapore, with expansion intended through versioned Jurisdiction Packs.
+
+Sovereign Founder OS is not a multi-agent chat room, an autonomous lawyer, or a substitute for a founder's judgment and licensed professional advice. It will not put personal business data on a blockchain or promise absolute security.
+
 ## Why Sovereign
 
 Business automation becomes dangerous when a model, plugin, cloud account, or platform can quietly become the owner. Sovereign Founder OS is designed so that useful AI assistance does not require that surrender:
@@ -77,7 +83,7 @@ Read the **[Sovereign Founder OS Manifesto →](MANIFESTO.md)** for the principl
 | --- | --- |
 | **Sovereign Enterprise Graph** | Canonical structured digital twin of the company — not chat history |
 | **Mutually Constrained Autonomy** | Planner, Policy Guard, Executor, Auditor, Recovery Controller, Human Owner — no single node holds all power |
-| **Capability Tokens** | Short-lived, scoped, revocable execution permissions |
+| **Capability Tokens** | Short-lived, scoped execution permissions; durable token revocation is a target capability |
 | **Resilient Trust Mesh** *(planned)* | Target multi-node trust architecture; the Recovery Mesh is its replication and failover subsystem |
 
 ## Documentation
@@ -91,21 +97,14 @@ Read the **[Sovereign Founder OS Manifesto →](MANIFESTO.md)** for the principl
 | Document | Description |
 | --- | --- |
 | [MANIFESTO.md](MANIFESTO.md) | The Sovereign Founder OS position and non-negotiable principles |
-| [VISION.md](VISION.md) | Product vision and design principles |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Threat model v0.1 |
-| [PRIVACY_MODEL.md](PRIVACY_MODEL.md) | Privacy and data classification |
 | [ROADMAP.md](ROADMAP.md) | Development roadmap (Stage 0–7) |
 | [docs/INDEX.md](docs/INDEX.md) | Full documentation map |
 
-### Complete Blueprint (中文)
+### Design Notes and Project History
 
-All detailed design specifications are public in [`docs/zh/`](docs/zh/):
-
-- [01 — 产品设想](docs/zh/01-AI-Founder-OS-初步设想.md)
-- [02 — 主权架构升级](docs/zh/02-Sovereign-Founder-OS-主权升级.md)
-- [03 — 开源企划书 v0.1](docs/zh/03-开源项目企划书-v0.1.md)
-- [04 — GUI 设计](docs/zh/04-GUI设计.md)
+Specialist designs, product drafts, positioning, and historical documents live under [`docs/`](docs/INDEX.md). They provide context; the core documents and accepted RFCs are authoritative when material conflicts.
 
 ## Tech Stack (Planned)
 
@@ -124,11 +123,12 @@ All detailed design specifications are public in [`docs/zh/`](docs/zh/):
 crates/
   contracts/      shared types (events, tokens, policy)
   identity/       device keys and signing
+  artifact/       signed manifests and exact invocation preparation
   audit-ledger/   append-only signed event log
   policy/         deterministic permission engine
-  capability/     short-lived execution tokens
+  capability/     legacy V1 and exact-bound Capability V2 tokens
   vault/          local encrypted storage
-  sandbox/        default-deny Wasmtime isolation (Phase A)
+  sandbox/        Phase A isolation + verified V2 pure-compute path
 apps/
   cli/            sovereign CLI
 ```
@@ -142,13 +142,15 @@ cargo run -p sovereign-cli -- sandbox-check
 cargo run -p sovereign-cli -- demo
 ```
 
-The isolated path currently permits import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. `sandbox-check` is a mechanical Phase A check using an ephemeral test issuer—not a production trust anchor. Artifact compilation is still in-process and is not covered by guest fuel or Store limits. The effectful tool step in `demo` remains explicitly labelled as a simulation until signed manifests, exact invocation binding, bounded compilation workers, durable authorization, and audited host interfaces are implemented. See [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
+The isolated paths currently permit import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. The Phase B foundation verifies role-separated publisher signatures, owns the exact artifact bytes, canonicalizes and binds security-relevant input and resources, and requires an exact one-use Capability V2 before the verified Wasmtime path starts. Its replay state is process-local, and the current core-Wasm ABI does not deliver canonical input to the guest.
+
+This is not a production plugin boundary or a completed Phase B. `sandbox-check` remains a mechanical Phase A check using an ephemeral test issuer—not a production trust anchor. Local signed admission records, content-addressed artifact storage, a killable compilation worker and trusted cache, a durable Authority Store, the Component/WIT input ABI, crash-safe evidence, and audited host effects remain unimplemented. The effectful tool step in `demo` therefore remains explicitly labelled as a simulation. See [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
 
 See [ROADMAP.md](ROADMAP.md) for the full development plan.
 
 ## Contributing
 
-We welcome contributions from agent framework developers, security researchers, privacy engineers, and founders. See [CONTRIBUTING.md](CONTRIBUTING.md).
+We welcome contributions from founders, product designers, Rust developers, agent framework developers, security researchers, privacy engineers, and domain experts. Start with [CONTRIBUTING.md](CONTRIBUTING.md), which explains how to find a useful first contribution.
 
 Report security issues via [SECURITY.md](SECURITY.md) — do not open public issues for vulnerabilities.
 
@@ -164,7 +166,7 @@ You are free to use, modify, and distribute this project under Apache 2.0 terms.
 
 - Repository: https://github.com/IcantFind-a-username/Sovereign-Founder-OS
 - Documentation index: [docs/INDEX.md](docs/INDEX.md)
-- Why not another agent?: [docs/why-not-another-agent.md](docs/why-not-another-agent.md)
+- Why not another agent?: [docs/positioning/why-not-another-agent.md](docs/positioning/why-not-another-agent.md)
 
 ---
 
