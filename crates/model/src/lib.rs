@@ -374,6 +374,53 @@ mod tests {
     }
 
     #[test]
+    fn amber_data_may_use_a_cloud_provider() {
+        // The confidentiality guard is Red-specific: it must not over-block
+        // Amber. With no local provider available, Amber routes to the cloud.
+        let gateway = ModelGateway::new(vec![
+            Box::new(DeterministicProvider::local("local", Health::Down)),
+            Box::new(DeterministicProvider::cloud("cloud", Health::Healthy)),
+        ]);
+        let (response, disclosure) = gateway.complete(&request(DataClass::Amber)).unwrap();
+        assert_eq!(response.provider_id, "cloud");
+        assert_eq!(response.provider_trust, ProviderTrust::Cloud);
+        assert_eq!(disclosure.data_class, DataClass::Amber);
+    }
+
+    #[test]
+    fn disclosure_names_serving_provider_and_records_failover() {
+        // A failing primary and a healthy backup: the disclosure must name the
+        // provider that actually served, its index, and record the skip.
+        let gateway = ModelGateway::new(vec![
+            Box::new(DeterministicProvider::local("primary", Health::Healthy).failing()),
+            Box::new(DeterministicProvider::local("backup", Health::Healthy)),
+        ]);
+        let (response, disclosure) = gateway.complete(&request(DataClass::Amber)).unwrap();
+        assert_eq!(response.provider_id, "backup");
+        assert_eq!(disclosure.provider_id, "backup");
+        assert_eq!(disclosure.provider_index, 1);
+        assert!(disclosure
+            .skipped
+            .iter()
+            .any(|skip| skip.provider_id == "primary" && skip.reason == SkipCause::Failed));
+    }
+
+    #[test]
+    fn output_exceeding_the_limit_fails_closed() {
+        // An echo provider returns the prompt verbatim; a prompt longer than
+        // the caller's ceiling must be refused, not silently truncated or
+        // passed through.
+        let gateway = ModelGateway::new(vec![Box::new(DeterministicProvider::local_echo(
+            "echo",
+            Health::Healthy,
+        ))]);
+        let mut request = request(DataClass::Amber);
+        request.max_output_chars = 4;
+        request.prompt = "this prompt is far longer than four characters".into();
+        assert_eq!(gateway.complete(&request), Err(ModelError::OutputTooLarge));
+    }
+
+    #[test]
     fn removing_primary_does_not_stop_the_workflow() {
         // Stage 2 exit criterion: primary down → backup serves the request.
         let gateway = ModelGateway::new(vec![

@@ -444,6 +444,30 @@ mod tests {
     }
 
     #[test]
+    fn resuming_with_fewer_steps_than_completed_fails_closed() {
+        let dir = tempdir().unwrap();
+        let runs = Arc::new(AtomicUsize::new(0));
+        // Complete a four-step workflow.
+        WorkflowRunner::open(dir.path(), "wf")
+            .unwrap()
+            .run(&steps(&["a", "b", "c", "d"], &runs))
+            .unwrap();
+        assert_eq!(runs.load(Ordering::SeqCst), 4);
+
+        // Reopen with a truncated definition — fewer steps than already
+        // completed. That can only mean the definition changed under a live
+        // checkpoint; the runner must refuse rather than silently drop history.
+        let resume_runs = Arc::new(AtomicUsize::new(0));
+        let error = WorkflowRunner::open(dir.path(), "wf")
+            .unwrap()
+            .run(&steps(&["a", "b"], &resume_runs))
+            .unwrap_err();
+        assert!(matches!(error, WorkflowError::StepDivergence(_)));
+        // It failed closed before running anything.
+        assert_eq!(resume_runs.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
     fn changed_step_name_under_a_live_checkpoint_fails_closed() {
         let dir = tempdir().unwrap();
         let runs = Arc::new(AtomicUsize::new(0));
