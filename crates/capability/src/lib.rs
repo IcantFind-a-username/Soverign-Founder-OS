@@ -4,6 +4,7 @@
 //! for the Phase A, pure-compute path. New code must use [`v2`] when binding an
 //! exact prepared invocation.
 
+pub mod approval;
 pub mod v2;
 
 use chrono::{DateTime, Duration, Utc};

@@ -359,3 +359,67 @@ fn v1_token_remains_on_legacy_executor_and_runtime_only() {
         ExecutionRuntime::WasmtimeVerifiedPureComputeV2
     );
 }
+
+#[test]
+fn execution_journal_records_completed_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let invocation = admit_and_prepare(&wasm_returning(9), "journal input");
+    let policy_decision = decision(&invocation);
+    let session_id = Uuid::new_v4();
+    let (issuer, validator) = authority();
+    let token = issue(&issuer, &invocation, &policy_decision, session_id);
+    let mut executor = VerifiedSandboxExecutor::new(vec![selector()], validator)
+        .unwrap()
+        .with_execution_journal(sovereign_execution::ExecutionJournal::open(dir.path()).unwrap());
+
+    let result = executor
+        .execute(request(&token, &invocation, &policy_decision, session_id))
+        .unwrap();
+    assert_eq!(result.exit_code, 9);
+
+    let recovered = sovereign_execution::ExecutionJournal::open(dir.path())
+        .unwrap()
+        .recover()
+        .unwrap();
+    assert_eq!(recovered.len(), 1);
+    assert!(matches!(
+        recovered[0].state,
+        sovereign_execution::ExecutionState::Completed { .. }
+    ));
+    assert_eq!(
+        recovered[0].intent.component_digest_hex,
+        invocation.artifact().component_digest().as_hex()
+    );
+}
+
+#[test]
+fn execution_journal_records_guest_trap_as_failed_not_indeterminate() {
+    let dir = tempfile::tempdir().unwrap();
+    let invocation = admit_and_prepare(&wasm_trapping(), "journal input");
+    let policy_decision = decision(&invocation);
+    let session_id = Uuid::new_v4();
+    let (issuer, validator) = authority();
+    let token = issue(&issuer, &invocation, &policy_decision, session_id);
+    let mut executor = VerifiedSandboxExecutor::new(vec![selector()], validator)
+        .unwrap()
+        .with_execution_journal(sovereign_execution::ExecutionJournal::open(dir.path()).unwrap());
+
+    assert!(matches!(
+        executor.execute(request(&token, &invocation, &policy_decision, session_id)),
+        Err(SandboxError::GuestTrap(_))
+    ));
+
+    let recovered = sovereign_execution::ExecutionJournal::open(dir.path())
+        .unwrap()
+        .recover()
+        .unwrap();
+    assert_eq!(recovered.len(), 1);
+    // A trapped guest is a definite failure, never indeterminate: the
+    // terminal record was flushed.
+    assert_eq!(
+        recovered[0].state,
+        sovereign_execution::ExecutionState::Failed {
+            code: "guest_trap".into()
+        }
+    );
+}

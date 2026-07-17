@@ -1,10 +1,14 @@
+mod demo;
+mod ui;
+mod workspace;
+
 use clap::{Parser, Subcommand};
-use sovereign_audit_ledger::{hash_bytes, AppendInput, AuditLedger};
+use sovereign_audit_ledger::AuditLedger;
 use sovereign_capability::{CapabilityIssuer, IssueOptions};
 use sovereign_contracts::{ActionRequest, AutomationLevel, DataClass};
 use sovereign_identity::DeviceIdentity;
 use sovereign_policy::PolicyEngine;
-use sovereign_sandbox::{ExecutionRequest, SandboxExecutor, WasmExecutionRequest};
+use sovereign_sandbox::{SandboxExecutor, WasmExecutionRequest};
 use sovereign_vault::Vault;
 use std::path::PathBuf;
 
@@ -28,12 +32,29 @@ struct Cli {
 enum Commands {
     /// Initialize local device identity, vault, and ledger
     Init,
-    /// Run the secure kernel demo workflow (effectful tools remain simulated)
-    Demo,
+    /// Run the story-driven secure kernel demo (real signatures, real denials)
+    Demo {
+        /// Run straight through without pausing between acts
+        #[arg(long)]
+        fast: bool,
+    },
     /// Run a mechanical check of the import-free Phase A Wasmtime path
     SandboxCheck,
     /// Show vault entry names
     Status,
+    /// Run the local app (Workspace + Security Center) on 127.0.0.1
+    Ui {
+        /// Port to bind on loopback
+        #[arg(long, default_value_t = 7787)]
+        port: u16,
+        /// Do not open the browser automatically
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Demonstrate model-gateway health-aware failover and the Red-data guard
+    ModelCheck,
+    /// Demonstrate durable workflow checkpoints resuming across a crash
+    WorkflowDemo,
 }
 
 fn data_dir() -> PathBuf {
@@ -46,11 +67,136 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Init => cmd_init()?,
-        Commands::Demo => cmd_demo()?,
+        Commands::Demo { fast } => demo::run(fast, data_dir())?,
         Commands::SandboxCheck => cmd_sandbox_check()?,
         Commands::Status => cmd_status()?,
+        Commands::Ui { port, no_open } => ui::run(port, data_dir(), !no_open)?,
+        Commands::ModelCheck => cmd_model_check(),
+        Commands::WorkflowDemo => cmd_workflow_demo()?,
     }
     Ok(())
+}
+
+fn cmd_workflow_demo() -> Result<(), Box<dyn std::error::Error>> {
+    use sovereign_workflow::{StepContext, WorkflowRunner, WorkflowStep};
+
+    struct NamedStep {
+        name: &'static str,
+        crash: bool,
+    }
+    impl WorkflowStep for NamedStep {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn run(&self, context: &StepContext<'_>) -> Result<Vec<u8>, String> {
+            if self.crash {
+                println!("    · step `{}` interrupted (simulated crash)", self.name);
+                return Err("process killed mid-step".into());
+            }
+            println!("    · executing step `{}`", self.name);
+            Ok(format!("{}:{}", context.workflow_id, self.name).into_bytes())
+        }
+    }
+    fn step(name: &'static str, crash: bool) -> Box<dyn WorkflowStep> {
+        Box::new(NamedStep { name, crash })
+    }
+
+    let dir = data_dir().join("workflow-demo");
+    let _ = std::fs::remove_dir_all(&dir);
+    let names = [
+        "generate_offer",
+        "create_invoice",
+        "build_plan",
+        "security_checklist",
+    ];
+
+    println!("Durable workflow · crash-safe checkpoints + idempotent resume\n");
+    println!("== First process: crashes during step 3 ==");
+    let mut first: Vec<Box<dyn WorkflowStep>> = names.iter().map(|n| step(n, false)).collect();
+    first[2] = step(names[2], true);
+    let crashed = WorkflowRunner::open(&dir, "founder-onboarding")?.run(&first);
+    println!(
+        "  first run ended with: {}",
+        match &crashed {
+            Ok(_) => "completed".to_string(),
+            Err(error) => error.to_string(),
+        }
+    );
+
+    println!("\n== Second process (another node): resumes the full workflow ==");
+    let full: Vec<Box<dyn WorkflowStep>> = names.iter().map(|n| step(n, false)).collect();
+    let summary = WorkflowRunner::open(&dir, "founder-onboarding")?.run(&full)?;
+    println!(
+        "\n  steps executed on resume: {:?} (steps 0,1 replayed from receipts, not re-run)",
+        summary.executed_now
+    );
+    println!("  total receipts: {}", summary.receipts.len());
+    let _ = std::fs::remove_dir_all(&dir);
+    println!("\nKill the process mid-workflow. Another node resumes from the last valid step.");
+    Ok(())
+}
+
+fn cmd_model_check() {
+    use sovereign_model::{
+        DeterministicProvider, Health, ModelGateway, ModelRequest, ProviderTrust,
+    };
+
+    println!("Model gateway · health-aware failover + Red-data guard");
+    println!("(providers are deterministic local stand-ins, not LLMs)\n");
+
+    // Primary local model is down; a cloud backup is healthy; a local
+    // fallback is healthy. Removing/downing the primary must not stop work.
+    let gateway = ModelGateway::new(vec![
+        Box::new(DeterministicProvider::local("local-primary", Health::Down)),
+        Box::new(DeterministicProvider::cloud(
+            "cloud-backup",
+            Health::Healthy,
+        )),
+        Box::new(DeterministicProvider::local(
+            "local-fallback",
+            Health::Healthy,
+        )),
+    ]);
+    println!("providers: {:?}", gateway.provider_ids());
+
+    let amber = ModelRequest {
+        task: "draft_outreach".into(),
+        prompt: "Draft a short note to Dr. Tan.".into(),
+        data_class: DataClass::Amber,
+        max_output_chars: 4096,
+    };
+    match gateway.complete(&amber) {
+        Ok((response, disclosure)) => {
+            println!("\n== Amber request ==");
+            println!(
+                "  primary down -> served by {} ({:?})",
+                response.provider_id, response.provider_trust
+            );
+            println!("  failover path: {:?}", disclosure.skipped);
+        }
+        Err(error) => println!("  unexpected: {error}"),
+    }
+
+    let red = ModelRequest {
+        task: "classify_customer_pii".into(),
+        prompt: "<red-zone customer record>".into(),
+        data_class: DataClass::Red,
+        max_output_chars: 4096,
+    };
+    match gateway.complete(&red) {
+        Ok((response, disclosure)) => {
+            println!("\n== Red request ==");
+            println!(
+                "  cloud backup skipped for confidentiality; served locally by {} ({:?})",
+                response.provider_id, response.provider_trust
+            );
+            let leaked = disclosure.provider_trust != ProviderTrust::Local;
+            println!("  red data left the device: {leaked}");
+        }
+        Err(error) => println!("  Red request denied (no local provider): {error}"),
+    }
+
+    println!("\nModels are replaceable. Red data stays local. Output is a draft, never authority.");
 }
 
 fn cmd_sandbox_check() -> Result<(), Box<dyn std::error::Error>> {
@@ -141,105 +287,5 @@ fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
         let ledger = AuditLedger::load(&ledger_path, device.public_key_b64())?;
         println!("audit events: {}", ledger.events().len());
     }
-    Ok(())
-}
-
-fn cmd_demo() -> Result<(), Box<dyn std::error::Error>> {
-    let root = data_dir();
-    std::fs::create_dir_all(&root)?;
-
-    let device_path = root.join("device.json");
-    let device = if device_path.exists() {
-        DeviceIdentity::load(&device_path)?
-    } else {
-        let d = DeviceIdentity::generate();
-        d.save(&device_path)?;
-        d
-    };
-
-    let mut vault = Vault::init(root.join("vault"))?;
-    vault.put(
-        "venture_profile",
-        br#"{"name":"Acme Consulting","stage":"customer_validation"}"#,
-    )?;
-
-    let policy = PolicyEngine::new();
-    let request = ActionRequest {
-        actor_id: "agent_builder".into(),
-        venture_id: "ven_demo".into(),
-        tool: "email".into(),
-        operation: "draft".into(),
-        resource: "customer:acme".into(),
-        data_class: DataClass::Amber,
-        automation_level: AutomationLevel::L1Draft,
-    };
-
-    println!("\n== Policy evaluation ==");
-    let decision = policy.evaluate(request);
-    println!("allowed: {}", decision.allowed);
-    println!("requires_approval: {}", decision.requires_approval);
-    println!("reason: {}", decision.reason);
-
-    let issuer = CapabilityIssuer::new();
-    let token = issuer.issue(&decision, IssueOptions::default(), false)?;
-    println!("\n== Capability token issued ==");
-    println!("token_id: {}", token.token_id);
-    println!("expires_at: {}", token.expires_at);
-
-    let mut sandbox = SandboxExecutor::new(vec!["email.draft".into()], issuer.public_key_b64())?;
-    let result = sandbox.execute_simulated(ExecutionRequest {
-        token: &token,
-        venture_id: "ven_demo",
-        actor_id: "agent_builder",
-        tool: "email",
-        operation: "draft",
-        resource: "customer:acme",
-        input: serde_json::json!({"subject": "Proposal for Acme Ltd."}),
-    })?;
-    println!("\n== Simulated execution (not isolated) ==");
-    println!("{}", serde_json::to_string_pretty(&result.output)?);
-
-    let decision_hash = hash_bytes(&serde_json::to_vec(&decision)?);
-    let ledger_path = root.join("ledger.json");
-    let mut ledger = if ledger_path.exists() {
-        AuditLedger::load(&ledger_path, device.public_key_b64())?
-    } else {
-        AuditLedger::new()
-    };
-
-    let event = ledger.append(
-        AppendInput {
-            venture_id: "ven_demo".into(),
-            actor_id: "agent_builder".into(),
-            action: "execute".into(),
-            resource: "email:draft".into(),
-            capability_id: Some(token.token_id),
-            payload: result.output,
-            policy_decision_hash: Some(decision_hash),
-        },
-        &device,
-    )?;
-    ledger.save(&ledger_path)?;
-
-    println!("\n== Audit event recorded ==");
-    println!("event_id: {}", event.event_id);
-    println!("event_hash: {}", event.event_hash);
-    ledger.verify_chain()?;
-    println!("chain integrity: OK");
-
-    // Demonstrate policy block
-    println!("\n== Adversarial check: red data to cloud ==");
-    let blocked = policy.evaluate(ActionRequest {
-        actor_id: "malicious_agent".into(),
-        venture_id: "ven_demo".into(),
-        tool: "cloud.model".into(),
-        operation: "infer".into(),
-        resource: "customer_database".into(),
-        data_class: DataClass::Red,
-        automation_level: AutomationLevel::L3BoundedAuto,
-    });
-    println!("allowed: {} — {}", blocked.allowed, blocked.reason);
-
-    println!("\nDemo complete. Company data remains local and encrypted.");
     Ok(())
 }

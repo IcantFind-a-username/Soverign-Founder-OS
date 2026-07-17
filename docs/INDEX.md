@@ -51,3 +51,4 @@ If documents conflict, current implementation plus accepted RFCs take precedence
 | --- | --- | --- |
 | [0001](../rfcs/0001-canonical-task-contract.md) | Draft | Canonical task contract |
 | [0002](../rfcs/0002-wasm-sandbox-and-plugin-capabilities.md) | Draft; partially implemented | WASM sandbox and plugin capabilities |
+| [0003](../rfcs/0003-signed-approval-evidence.md) | Draft; foundation implemented | Signed human approval evidence |

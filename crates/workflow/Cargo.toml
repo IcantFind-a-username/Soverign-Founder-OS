@@ -1,6 +1,6 @@
 [package]
-name = "sovereign-artifact"
-description = "Verified plugin artifacts and exact invocation preparation for Sovereign Runtime"
+name = "sovereign-workflow"
+description = "Durable, resumable workflow checkpoints with idempotent step replay"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,12 +11,9 @@ repository.workspace = true
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_json_canonicalizer = { workspace = true }
 sha2 = { workspace = true }
-sovereign-identity = { workspace = true }
 thiserror = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v5"] }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tempfile = "3"

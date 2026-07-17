@@ -115,6 +115,30 @@ Specialist designs, product drafts, positioning, and historical documents live u
 | Agent Workers | Python (isolated, untrusted boundary) |
 | Protocols | JSON Schema, gRPC, WASI, MCP, A2A |
 
+## See It
+
+The local app (`sovereign ui`, English/中文) — your business state in an
+encrypted local vault, every send request stopped for human approval, and a
+one-click attack gauntlet where every denial is a real enforcement path:
+
+| Founder Workspace (工作台) | Security Center |
+| --- | --- |
+| ![Founder Workspace in Chinese](docs/screenshots/workspace-zh.png) | ![Security Center gauntlet](docs/screenshots/security-center-en.png) |
+
+## Quick Start
+
+With Rust installed:
+
+```bash
+git clone https://github.com/IcantFind-a-username/Sovereign-Founder-OS
+cd Sovereign-Founder-OS
+cargo run -p sovereign-cli -- ui     # opens http://127.0.0.1:7787
+```
+
+Prebuilt binaries for Linux, macOS, and Windows are attached to
+[GitHub Releases](https://github.com/IcantFind-a-username/Sovereign-Founder-OS/releases)
+when versions are tagged — download, unpack, and run `sovereign ui`.
+
 ## Current Status
 
 **Stage 1: Secure Kernel** — in active development.
@@ -123,8 +147,13 @@ Specialist designs, product drafts, positioning, and historical documents live u
 crates/
   contracts/      shared types (events, tokens, policy)
   identity/       device keys and signing
-  artifact/       signed manifests and exact invocation preparation
+  artifact/       signed manifests, exact invocation preparation, local admission store
   audit-ledger/   append-only signed event log
+  authority/      durable cross-process one-use consumption (tokens, approvals, idempotency)
+  execution/      crash-safe execution journal (durable intent, Indeterminate recovery)
+  effects/        audited local outbox file-write broker (first host effect)
+  model/          model gateway: routing, health, failover, disclosure records
+  workflow/       durable checkpointed workflows with idempotent crash resume
   policy/         deterministic permission engine
   capability/     legacy V1 and exact-bound Capability V2 tokens
   vault/          local encrypted storage
@@ -139,12 +168,42 @@ Run locally:
 cargo test --workspace
 cargo run -p sovereign-cli -- init
 cargo run -p sovereign-cli -- sandbox-check
-cargo run -p sovereign-cli -- demo
+cargo run -p sovereign-cli -- demo          # add --fast to skip the pauses
+cargo run -p sovereign-cli -- ui            # local app at http://127.0.0.1:7787
+cargo run -p sovereign-cli -- model-check   # model failover + Red-data guard
+cargo run -p sovereign-cli -- workflow-demo # crash-safe workflow resume
 ```
 
-The isolated paths currently permit import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. The Phase B foundation verifies role-separated publisher signatures, owns the exact artifact bytes, canonicalizes and binds security-relevant input and resources, and requires an exact one-use Capability V2 before the verified Wasmtime path starts. Its replay state is process-local, and the current core-Wasm ABI does not deliver canonical input to the guest.
+`demo` is a story-driven walkthrough of the secure kernel: it creates your
+local trust root, installs a signed plugin through publisher verification and
+local admission, executes it under an exact one-use Capability V2 inside the
+Wasmtime sandbox, records signed audit evidence, and then runs a seven-attack
+gauntlet (supply-chain tampering, token replay, input substitution, greedy
+manifests, infinite loops, red-data exfiltration, approval bypass, and audit
+tampering) — every denial is a real enforcement path, not a mock.
 
-This is not a production plugin boundary or a completed Phase B. `sandbox-check` remains a mechanical Phase A check using an ephemeral test issuer—not a production trust anchor. Local signed admission records, content-addressed artifact storage, a killable compilation worker and trusted cache, a durable Authority Store, the Component/WIT input ABI, crash-safe evidence, and audited host effects remain unimplemented. The effectful tool step in `demo` therefore remains explicitly labelled as a simulation. See [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
+`ui` serves the local app on 127.0.0.1 only (English/中文). It has two views:
+
+- **Workspace** — the first usable product slice: create your company profile,
+  add customers, generate offer and invoice drafts (local templates, no model),
+  request to send a document — which always stops in the Approval Center for
+  the human owner — and export every byte of your business state as one JSON
+  file. State lives in the encrypted vault; every change passes the policy
+  engine and appends a signed audit event. Approving a send only records the
+  decision: Stage 1 performs no external effects.
+- **Security Center** — device identity, vault entries, admitted plugins
+  (verified from the content-addressed store), the signed audit chain, and a
+  one-click in-memory run of the attack gauntlet.
+
+The server binds loopback only, rejects foreign `Host` headers
+(DNS-rebinding defense), and requires `application/json` bodies on mutations
+(CSRF defense). It exposes no secrets and never leaves your machine.
+
+The isolated paths currently permit import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. The Phase B foundation verifies role-separated publisher signatures, owns the exact artifact bytes, canonicalizes and binds security-relevant input and resources, and requires an exact one-use Capability V2 before the verified Wasmtime path starts. Replay state is process-local by default and durable when the Authority Store is attached (the workspace app attaches it); the current core-Wasm ABI does not deliver canonical input to the guest.
+
+The artifact crate now also provides the local admission transaction: an owner-controlled content-addressed store plus a locally signed admission record (`artifact-admission` COSE role) that promotes a publisher-verified artifact to an `AdmittedArtifact`, with every load re-deriving digests from the stored bytes. The verified executor does not yet require the admitted handle.
+
+This is not a production plugin boundary or a completed Phase B. `sandbox-check` remains a mechanical Phase A check using an ephemeral test issuer—not a production trust anchor, and `demo` uses hard-coded demo keys. Executor consumption of admitted artifacts, a killable compilation worker and trusted cache, a durable Authority Store, the Component/WIT input ABI, crash-safe evidence, and audited host effects remain unimplemented. The demo performs no external effects; effectful requests fail closed. See [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
 
 See [ROADMAP.md](ROADMAP.md) for the full development plan.
 

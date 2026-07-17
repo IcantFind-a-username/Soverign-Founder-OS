@@ -1,13 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/authority",
     "crates/contracts",
+    "crates/effects",
+    "crates/execution",
     "crates/identity",
+    "crates/model",
     "crates/artifact",
     "crates/audit-ledger",
     "crates/policy",
     "crates/capability",
     "crates/vault",
+    "crates/workflow",
     "crates/sandbox",
     "apps/cli",
     "tests/adversarial",
@@ -21,13 +26,18 @@ license = "Apache-2.0"
 repository = "https://github.com/IcantFind-a-username/Sovereign-Founder-OS"
 
 [workspace.dependencies]
+sovereign-authority = { path = "crates/authority" }
 sovereign-contracts = { path = "crates/contracts" }
+sovereign-effects = { path = "crates/effects" }
+sovereign-execution = { path = "crates/execution" }
 sovereign-identity = { path = "crates/identity" }
+sovereign-model = { path = "crates/model" }
 sovereign-artifact = { path = "crates/artifact" }
 sovereign-audit-ledger = { path = "crates/audit-ledger" }
 sovereign-policy = { path = "crates/policy" }
 sovereign-capability = { path = "crates/capability" }
 sovereign-vault = { path = "crates/vault" }
+sovereign-workflow = { path = "crates/workflow" }
 sovereign-sandbox = { path = "crates/sandbox" }
 
 serde = { version = "1", features = ["derive"] }

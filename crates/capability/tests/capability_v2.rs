@@ -566,9 +566,11 @@ fn rejects_self_supplied_approval_evidence_and_backend_downgrade() {
     });
     let token = sign_claims(&with_approval);
     let (_, mut validator) = authority(NOW);
+    // RFC 0003: evidence on a decision that does not require approval is
+    // rejected as unexpected, whether or not an approval object is presented.
     assert!(matches!(
         validator.authorize_and_consume(&token, context(&prepared, &decision, session_id)),
-        Err(CapabilityV2Error::UnsupportedApprovalEvidence)
+        Err(CapabilityV2Error::UnexpectedApprovalEvidence)
     ));
 
     let mut downgraded = claims(&prepared, &decision, session_id);

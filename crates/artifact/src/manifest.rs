@@ -15,7 +15,7 @@ pub const CANONICALIZATION_PROFILE: &str = "rfc8785-jcs+sovereign-digest-v1";
 pub const HARD_MAX_SIGNED_MANIFEST_BYTES: usize = 256 * 1024;
 pub const HARD_MAX_MANIFEST_PAYLOAD_BYTES: usize = 192 * 1024;
 pub const HARD_MAX_COMPONENT_BYTES: usize = 2 * 1024 * 1024;
-const MANIFEST_DIGEST_DOMAIN: &[u8] = b"sovereign.plugin-manifest.jcs.v1";
+pub(crate) const MANIFEST_DIGEST_DOMAIN: &[u8] = b"sovereign.plugin-manifest.jcs.v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -206,16 +206,24 @@ impl PluginManifest {
         expected_issuer: &str,
         verified_key_id: &[u8; 32],
     ) -> Result<(), ArtifactError> {
-        if self.protocol_version != MANIFEST_PROTOCOL_VERSION {
-            return Err(ArtifactError::UnsupportedProtocolVersion(
-                self.protocol_version,
-            ));
-        }
         if self.publisher_issuer != expected_issuer {
             return Err(ArtifactError::PublisherIssuerMismatch);
         }
         if self.publisher_key_id.as_bytes() != verified_key_id {
             return Err(ArtifactError::PublisherKeyIdMismatch);
+        }
+        self.validate_structural()
+    }
+
+    /// Manifest invariants that do not depend on publisher trust resolution.
+    /// The admission loader re-runs these on stored bytes whose publisher
+    /// signature was already verified at admission time and whose identity is
+    /// re-proven by digest equality.
+    pub(crate) fn validate_structural(&self) -> Result<(), ArtifactError> {
+        if self.protocol_version != MANIFEST_PROTOCOL_VERSION {
+            return Err(ArtifactError::UnsupportedProtocolVersion(
+                self.protocol_version,
+            ));
         }
         if self.risk_class != RiskClass::PureCompute {
             return Err(ArtifactError::UnsupportedRiskClass);
@@ -349,6 +357,7 @@ pub struct VerifiedArtifact {
     component_digest: Digest,
     manifest: Arc<PluginManifest>,
     bytes: Arc<[u8]>,
+    canonical_manifest: Arc<[u8]>,
 }
 
 impl fmt::Debug for VerifiedArtifact {
@@ -378,6 +387,32 @@ impl VerifiedArtifact {
 
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Exact canonical JCS manifest payload whose domain-separated digest is
+    /// `manifest_digest`. Crate-private: only the admission store persists it.
+    pub(crate) fn canonical_manifest(&self) -> &[u8] {
+        &self.canonical_manifest
+    }
+
+    /// Crate-private reconstruction for the admission loader. Callers must
+    /// have already recomputed both digests from the exact bytes supplied and
+    /// revalidated the manifest structure; this constructor performs no
+    /// verification of its own.
+    pub(crate) fn from_admitted_parts(
+        manifest_digest: Digest,
+        component_digest: Digest,
+        manifest: Arc<PluginManifest>,
+        bytes: Arc<[u8]>,
+        canonical_manifest: Arc<[u8]>,
+    ) -> Self {
+        Self {
+            manifest_digest,
+            component_digest,
+            manifest,
+            bytes,
+            canonical_manifest,
+        }
     }
 
     pub fn ensure_digests(
@@ -526,6 +561,7 @@ impl<'a, C: TrustedClock> ArtifactVerifier<'a, C> {
             component_digest,
             manifest: Arc::new(manifest),
             bytes,
+            canonical_manifest: Arc::from(canonical),
         })
     }
 }

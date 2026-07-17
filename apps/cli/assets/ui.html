@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sovereign Founder OS</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --panel: #232322;
+    --panel-edge: #33332f;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #8a897f;
+    --good: #0ca30c;
+    --warn: #fab219;
+    --critical: #d03b3b;
+    --accent: #3987e5;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--surface); color: var(--ink);
+    font: 15px/1.5 var(--sans);
+    padding: 28px clamp(16px, 4vw, 48px) 64px;
+    max-width: 1100px; margin-inline: auto;
+  }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  header h1 { font-size: 20px; font-weight: 650; letter-spacing: .2px; }
+  header .sub { color: var(--ink-2); margin-top: 4px; }
+  header .honest { color: var(--ink-3); font-size: 13px; margin-top: 10px; max-width: 70ch; }
+  .lang { display: flex; border: 1px solid var(--panel-edge); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+  .lang button { background: transparent; color: var(--ink-2); border: 0; font: 600 13px/1 var(--sans); padding: 8px 14px; cursor: pointer; }
+  .lang button.active { background: var(--panel-edge); color: var(--ink); }
+  nav.tabs { display: flex; gap: 8px; margin: 22px 0 4px; border-bottom: 1px solid var(--panel-edge); }
+  nav.tabs button {
+    background: transparent; color: var(--ink-3); border: 0; border-bottom: 2px solid transparent;
+    font: 650 15px/1 var(--sans); padding: 10px 14px; cursor: pointer;
+  }
+  nav.tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 22px 0; }
+  .tile { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 10px; padding: 14px 16px; }
+  .tile .label { color: var(--ink-3); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+  .tile .value { font-size: 26px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .meta { color: var(--ink-2); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
+  section { margin-top: 28px; }
+  section > h2 { font-size: 15px; font-weight: 650; color: var(--ink-2); margin-bottom: 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 10px; overflow: hidden; }
+  .panel.pad { padding: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 14px; border-top: 1px solid var(--panel-edge); }
+  thead th { border-top: none; color: var(--ink-3); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+  td.mono, .mono { font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
+  .empty { padding: 16px; color: var(--ink-3); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; border-radius: 999px; padding: 2px 10px; }
+  .badge.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .badge.bad { color: var(--critical); background: color-mix(in srgb, var(--critical) 14%, transparent); }
+  .badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .badge.neutral { color: var(--ink-2); background: color-mix(in srgb, var(--ink-2) 12%, transparent); }
+  button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 8px; font: 600 14px/1 var(--sans); padding: 10px 18px; cursor: pointer; }
+  button.primary:disabled { opacity: .55; cursor: wait; }
+  button.ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--panel-edge); border-radius: 8px; font: 600 14px/1 var(--sans); padding: 10px 18px; cursor: pointer; }
+  button.small { padding: 7px 12px; font-size: 13px; }
+  button.approve { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); border-radius: 8px; font: 600 13px/1 var(--sans); padding: 7px 12px; cursor: pointer; }
+  button.reject { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--critical); border: 1px solid color-mix(in srgb, var(--critical) 40%, transparent); border-radius: 8px; font: 600 13px/1 var(--sans); padding: 7px 12px; cursor: pointer; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  input[type=text], textarea, select {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--panel-edge);
+    border-radius: 8px; font: 14px/1.4 var(--sans); padding: 9px 12px; width: 100%;
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  .form-grid { display: grid; gap: 10px; }
+  .form-row { display: grid; gap: 10px; grid-template-columns: 1fr auto; align-items: end; }
+  label { display: block; color: var(--ink-3); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 4px; }
+  .doc { border-top: 1px solid var(--panel-edge); padding: 12px 14px; }
+  .doc:first-child { border-top: none; }
+  .doc-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .doc-head .title { font-weight: 600; flex: 1; min-width: 200px; }
+  .doc details { margin-top: 8px; }
+  .doc summary { color: var(--ink-3); font-size: 13px; cursor: pointer; }
+  .doc pre { background: var(--surface); border: 1px solid var(--panel-edge); border-radius: 8px; padding: 12px; margin-top: 8px; font: 13px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; }
+  .approval { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; padding: 12px 14px; border-top: 1px solid var(--panel-edge); align-items: center; }
+  .approval:first-child { border-top: none; }
+  .approval .why { color: var(--ink-3); font-size: 13px; }
+  .actions { display: flex; gap: 8px; }
+  .status-line { color: var(--ink-3); font-size: 13px; min-height: 1.2em; }
+  .gauntlet-row { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 6px 16px; padding: 11px 14px; border-top: 1px solid var(--panel-edge); align-items: start; }
+  .gauntlet-row:first-child { border-top: none; }
+  .gauntlet-row .name { font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+  .gauntlet-row .name .badge { flex-shrink: 0; }
+  .gauntlet-row .detail { color: var(--ink-2); font-size: 14px; }
+  @media (max-width: 720px) { .gauntlet-row, .approval { grid-template-columns: 1fr; } }
+  footer { margin-top: 40px; color: var(--ink-3); font-size: 13px; max-width: 78ch; }
+  footer p { margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <header>
+    <h1 data-i18n="title">SOVEREIGN FOUNDER OS</h1>
+    <div class="sub" data-i18n="stage"></div>
+    <div class="honest" data-i18n="honest_intro"></div>
+  </header>
+  <div class="lang" role="group" aria-label="Language">
+    <button id="lang-en">EN</button>
+    <button id="lang-zh">中文</button>
+  </div>
+</div>
+
+<nav class="tabs">
+  <button id="tab-workspace" data-i18n="tab_workspace"></button>
+  <button id="tab-security" data-i18n="tab_security"></button>
+</nav>
+
+<!-- ══════════════════ WORKSPACE VIEW ══════════════════ -->
+<div id="view-workspace" hidden>
+  <section>
+    <h2 data-i18n="ws_venture_title"></h2>
+    <div class="panel pad form-grid">
+      <div><label data-i18n="ws_company_name"></label><input type="text" id="v-name" maxlength="200"></div>
+      <div><label data-i18n="ws_service_desc"></label><textarea id="v-service" maxlength="2000"></textarea></div>
+      <div class="toolbar">
+        <button class="primary" id="v-save" data-i18n="ws_save"></button>
+        <span class="status-line" id="v-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="ws_customers_title"></h2>
+    <div class="panel pad form-grid">
+      <div class="form-row">
+        <div><label data-i18n="ws_customer_name"></label><input type="text" id="c-name" maxlength="200"></div>
+        <button class="primary" id="c-add" data-i18n="ws_add_customer"></button>
+      </div>
+      <div><label data-i18n="ws_customer_notes"></label><input type="text" id="c-notes" maxlength="500"></div>
+    </div>
+    <div class="panel" style="margin-top:10px"><div id="customers" class="empty" data-i18n="ws_no_customers"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="ws_documents_title"></h2>
+    <div class="panel pad form-grid">
+      <div class="toolbar">
+        <div style="flex:1;min-width:200px"><label data-i18n="ws_for_customer"></label><select id="d-customer"></select></div>
+        <div style="width:140px"><label data-i18n="ws_amount"></label><input type="text" id="d-amount" placeholder="2500.00"></div>
+      </div>
+      <div class="toolbar">
+        <button class="primary" id="d-offer" data-i18n="ws_gen_offer"></button>
+        <button class="primary" id="d-invoice" data-i18n="ws_gen_invoice"></button>
+        <span class="status-line" id="d-status"></span>
+      </div>
+      <div class="status-line" data-i18n="ws_doc_note"></div>
+    </div>
+    <div class="panel" style="margin-top:10px"><div id="documents" class="empty" data-i18n="ws_no_documents"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="ws_approvals_title"></h2>
+    <div class="panel"><div id="approvals" class="empty" data-i18n="ws_no_approvals"></div></div>
+  </section>
+
+  <section>
+    <div class="toolbar">
+      <a href="/api/export" download><button class="ghost" data-i18n="ws_export"></button></a>
+      <span class="status-line" data-i18n="ws_export_note"></span>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════ SECURITY VIEW ══════════════════ -->
+<div id="view-security" hidden>
+  <div class="tiles">
+    <div class="tile"><div class="label" data-i18n="tile_device"></div><div class="value" id="t-device">–</div><div class="meta" id="t-device-meta"></div></div>
+    <div class="tile"><div class="label" data-i18n="tile_events"></div><div class="value" id="t-events">–</div><div class="meta" id="t-chain"></div></div>
+    <div class="tile"><div class="label" data-i18n="tile_vault"></div><div class="value" id="t-vault">–</div><div class="meta" data-i18n="vault_meta"></div></div>
+    <div class="tile"><div class="label" data-i18n="tile_plugins"></div><div class="value" id="t-plugins">–</div><div class="meta" data-i18n="plugins_meta"></div></div>
+  </div>
+
+  <section>
+    <h2 data-i18n="sec_plugins"></h2>
+    <div class="panel"><div id="plugins" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="sec_ledger"></h2>
+    <div class="panel"><div id="ledger" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="sec_gauntlet"></h2>
+    <div class="toolbar">
+      <button id="run" class="primary" data-i18n="btn_run"></button>
+      <button id="refresh" class="ghost" data-i18n="btn_refresh"></button>
+      <span class="mono" id="gauntlet-status"></span>
+    </div>
+    <div class="panel"><div id="gauntlet" class="empty" data-i18n="gauntlet_intro"></div></div>
+  </section>
+</div>
+
+<footer>
+  <p><strong data-i18n="footer_limits_title"></strong> <span data-i18n="footer_limits"></span></p>
+</footer>
+
+<script>
+"use strict";
+const STRINGS = {
+  en: {
+    title: "SOVEREIGN FOUNDER OS",
+    stage: "Stage 1 · minimal usable workspace on the secure kernel",
+    honest_intro: "Runs entirely on your machine at 127.0.0.1 — no cloud, no account, no telemetry. Your business state lives in a local encrypted vault; every change passes the policy engine and leaves a signed audit event.",
+    tab_workspace: "Workspace", tab_security: "Security Center",
+    ws_venture_title: "Your company",
+    ws_company_name: "Company name", ws_service_desc: "What service do you sell?",
+    ws_save: "Save", saved: "saved ✓",
+    ws_customers_title: "Customers",
+    ws_customer_name: "Customer name", ws_customer_notes: "Notes (optional)", ws_add_customer: "Add customer",
+    ws_no_customers: "No customers yet.",
+    th_customer: "Customer", th_notes: "Notes", th_added: "Added",
+    ws_documents_title: "Documents",
+    ws_for_customer: "For customer", ws_amount: "Amount",
+    ws_gen_offer: "Generate offer draft", ws_gen_invoice: "Generate invoice draft",
+    ws_doc_note: "Drafts are generated locally from templates — no model touches your business records in this stage.",
+    ws_no_documents: "No documents yet — add a customer, then generate an offer or invoice.",
+    ws_view_content: "View content",
+    ws_submit_send: "Request to send",
+    status_draft: "draft", status_pending_approval: "awaiting your approval",
+    status_approved_pending_delivery: "approved — delivery deferred (no external effects in Stage 1)",
+    ws_evidence: (e) => "✓ signed approval " + e.evidence_digest.slice(0, 12) + "… · approver key " + e.approver_key_id.slice(0, 12) + "… · sandboxed run exit " + e.guest_exit_code,
+    ws_outbox: (o) => "→ written to outbox/" + o.relative_path + " · sha256 " + o.content_sha256.slice(0, 12) + "… · " + o.bytes + " bytes",
+    status_rejected: "rejected",
+    kind_offer: "Offer", kind_invoice: "Invoice",
+    ws_approvals_title: "Approval Center",
+    ws_no_approvals: "Nothing awaiting approval. Sending a document always stops here first — the AI can never skip you.",
+    ws_approve: "Approve", ws_reject: "Reject",
+    ws_approval_for: "Send request for: ",
+    ws_export: "Export all my data", ws_export_note: "Everything — company, customers, documents, and the signed audit chain — as one JSON file. Your data, your exit.",
+    tile_device: "Device identity", tile_events: "Audit events", tile_vault: "Vault entries", tile_plugins: "Admitted plugins",
+    vault_meta: "encrypted at rest (AES-256-GCM)", plugins_meta: "owner-signed admission records",
+    device_ready: "ready", device_none: "none", device_hint: "created automatically on first use",
+    chain_ok: "chain verified", chain_broken: "CHAIN BROKEN", no_ledger_tile: "no ledger yet",
+    sec_plugins: "Admitted plugins — content-addressed store",
+    sec_ledger: "Audit trail — signed hash chain (latest 25)",
+    sec_gauntlet: "Security gauntlet — real attacks, run now, in memory",
+    btn_run: "Run the gauntlet", btn_refresh: "Refresh state",
+    gauntlet_intro: "Seven attacks against the running kernel: token replay, input substitution, a manifest demanding host capabilities, an infinite-loop plugin, red-zone data exfiltration, approval bypass, and audit tampering. Nothing is mocked.",
+    loading: "loading…",
+    th_status: "Status", th_component: "Component", th_manifest: "Manifest", th_risk: "Risk", th_backend: "Backend", th_admitted_by: "Admitted by",
+    th_time: "Time", th_actor: "Actor", th_action: "Action", th_resource: "Resource", th_hash: "Event hash",
+    verified: "verified", unverified: "unverified",
+    plugins_empty: "No plugins admitted yet — run `sovereign demo`.",
+    ledger_empty: "No audit events yet — use the Workspace and they will appear.",
+    ledger_broken: "chain verification failed",
+    running: "running real attacks…",
+    all_held: (n) => "all " + n + " boundaries held",
+    violated: (n) => n + " EXPECTATION(S) VIOLATED — this is a bug, please report it",
+    held: "held", failed: "FAILED",
+    gauntlet_error: "gauntlet error: ", request_failed: "request failed: ",
+    state_failed: "failed to load state: ",
+    footer_limits_title: "Honest limits of this stage:",
+    footer_limits: "documents are template drafts (no AI yet); approving a send only records your decision — Stage 1 performs no external effects; replay defense is process-local; demo trust anchors are not production key management.",
+    attacks: {}
+  },
+  zh: {
+    title: "SOVEREIGN FOUNDER OS",
+    stage: "第一阶段 · 安全内核之上的最小可用工作台",
+    honest_intro: "完全运行在你自己的设备上(127.0.0.1)——无云端、无账号、无遥测。你的业务数据保存在本地加密保险库中;每一次变更都先经过策略引擎,并留下签名审计记录。",
+    tab_workspace: "工作台", tab_security: "安全中心",
+    ws_venture_title: "你的公司",
+    ws_company_name: "公司名称", ws_service_desc: "你提供什么服务?",
+    ws_save: "保存", saved: "已保存 ✓",
+    ws_customers_title: "客户",
+    ws_customer_name: "客户名称", ws_customer_notes: "备注(可选)", ws_add_customer: "添加客户",
+    ws_no_customers: "暂无客户。",
+    th_customer: "客户", th_notes: "备注", th_added: "添加时间",
+    ws_documents_title: "文档",
+    ws_for_customer: "目标客户", ws_amount: "金额",
+    ws_gen_offer: "生成报价单草稿", ws_gen_invoice: "生成发票草稿",
+    ws_doc_note: "草稿由本地模板生成——本阶段没有任何模型接触你的业务记录。",
+    ws_no_documents: "暂无文档——先添加客户,再生成报价单或发票。",
+    ws_view_content: "查看内容",
+    ws_submit_send: "申请发送",
+    status_draft: "草稿", status_pending_approval: "等待你的审批",
+    status_approved_pending_delivery: "已批准 — 发送延后(第一阶段无外部副作用)",
+    ws_evidence: (e) => "✓ 签名审批 " + e.evidence_digest.slice(0, 12) + "… · 审批人密钥 " + e.approver_key_id.slice(0, 12) + "… · 沙箱执行返回 " + e.guest_exit_code,
+    ws_outbox: (o) => "→ 已写入 outbox/" + o.relative_path + " · sha256 " + o.content_sha256.slice(0, 12) + "… · " + o.bytes + " 字节",
+    status_rejected: "已拒绝",
+    kind_offer: "报价单", kind_invoice: "发票",
+    ws_approvals_title: "审批中心",
+    ws_no_approvals: "暂无待审批事项。发送文档永远会先停在这里——AI 永远无法跳过你。",
+    ws_approve: "批准", ws_reject: "拒绝",
+    ws_approval_for: "发送申请:",
+    ws_export: "导出我的全部数据", ws_export_note: "公司、客户、文档与签名审计链——打包为一个 JSON 文件。数据属于你,离开也自由。",
+    tile_device: "设备身份", tile_events: "审计事件", tile_vault: "保险库条目", tile_plugins: "已准入插件",
+    vault_meta: "静态加密(AES-256-GCM)", plugins_meta: "所有者签名的准入记录",
+    device_ready: "就绪", device_none: "未创建", device_hint: "首次使用时自动创建",
+    chain_ok: "哈希链已验证", chain_broken: "哈希链已损坏", no_ledger_tile: "暂无账本",
+    sec_plugins: "已准入插件 — 内容寻址存储",
+    sec_ledger: "审计记录 — 签名哈希链(最近 25 条)",
+    sec_gauntlet: "安全闯关 — 真实攻击,即刻在内存中运行",
+    btn_run: "运行安全闯关", btn_refresh: "刷新状态",
+    gauntlet_intro: "对运行中的内核发起七项攻击:令牌重放、输入替换、清单越权申请、死循环插件、红区数据外泄、绕过审批、篡改审计。全部真实执行,绝无模拟。",
+    loading: "加载中…",
+    th_status: "状态", th_component: "组件", th_manifest: "清单", th_risk: "风险等级", th_backend: "后端", th_admitted_by: "准入者",
+    th_time: "时间", th_actor: "执行者", th_action: "操作", th_resource: "资源", th_hash: "事件哈希",
+    verified: "已验证", unverified: "未通过验证",
+    plugins_empty: "尚未准入任何插件 — 请先运行 `sovereign demo`。",
+    ledger_empty: "暂无审计事件——使用工作台后将自动出现。",
+    ledger_broken: "哈希链验证失败",
+    running: "正在运行真实攻击…",
+    all_held: (n) => "全部 " + n + " 项边界守住",
+    violated: (n) => n + " 项安全预期被违反 — 这是缺陷,请报告",
+    held: "守住", failed: "失守",
+    gauntlet_error: "闯关运行出错:", request_failed: "请求失败:",
+    state_failed: "状态加载失败:",
+    footer_limits_title: "本阶段的真实局限:",
+    footer_limits: "文档为模板草稿(尚未接入 AI);批准发送仅记录你的决定——第一阶段不执行任何外部副作用;重放防御仅限进程内;演示信任锚并非生产级密钥管理。",
+    attacks: {
+      baseline: { name: "基线:经授权的执行", detail: "签名插件在无导入的 Wasmtime 沙箱中、凭一次性精确能力令牌运行" },
+      replay: { name: "令牌重放", detail: "重复出示已消费的能力令牌被拒绝(进程内重放防御)" },
+      substitution: { name: "授权后替换输入", detail: "被替换的输入因摘要不匹配而被拒绝;未被动过的令牌仍可执行原授权输入" },
+      greedy_manifest: { name: "清单索要主机能力", detail: "申请文件系统访问的清单在任何代码运行之前即被拒绝" },
+      infinite_loop: { name: "死循环插件", detail: "失控的插件被确定性燃料计量终止;该次尝试仍消耗了其令牌" },
+      red_cloud: { name: "红区数据发往云端模型", detail: "确定性策略拒绝:红区数据不得发送至云端工具" },
+      approval: { name: "无人工审批的高影响操作", detail: "没有审批证据就不签发任何能力令牌 — 运行时失败即关闭" },
+      audit_tamper: { name: "篡改审计历史", detail: "改写一条已记录的操作即破坏签名哈希链并被检测到" }
+    }
+  }
+};
+
+let lang = localStorage.getItem("sovereign-ui-lang")
+  || (navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
+let view = localStorage.getItem("sovereign-ui-view") || "workspace";
+let lastState = null;
+let lastGauntlet = null;
+let ws = null;
+
+const $ = (id) => document.getElementById(id);
+const t = (key) => STRINGS[lang][key];
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function badge(kind, label) {
+  const marks = { good: "✓ ", bad: "✗ ", warn: "⧗ ", neutral: "" };
+  return el("span", "badge " + kind, (marks[kind] || "") + label);
+}
+
+function table(headers, rows) {
+  const tbl = el("table");
+  const thead = el("thead"); const hr = el("tr");
+  headers.forEach(h => hr.appendChild(el("th", null, h)));
+  thead.appendChild(hr); tbl.appendChild(thead);
+  const tbody = el("tbody");
+  rows.forEach(cells => {
+    const tr = el("tr");
+    cells.forEach(cell => {
+      if (cell instanceof Node) { const td = el("td"); td.appendChild(cell); tr.appendChild(td); }
+      else { tr.appendChild(el("td", cell && cell.mono ? "mono" : null, cell && cell.mono ? cell.mono : cell)); }
+    });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  return tbl;
+}
+
+const locale = () => lang === "zh" ? "zh-CN" : undefined;
+const fmtTime = (unix) => new Date(unix * 1000).toLocaleString(locale());
+
+async function api(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({ lang }, body || {})),
+  });
+  return response.json();
+}
+
+/* ─────────────── Workspace ─────────────── */
+
+async function loadWorkspace() {
+  const data = await (await fetch("/api/workspace")).json();
+  if (data.ok) { ws = data.workspace; renderWorkspace(); }
+}
+
+function renderWorkspace() {
+  if (!ws) return;
+  if (ws.venture) {
+    if (document.activeElement !== $("v-name")) $("v-name").value = ws.venture.name;
+    if (document.activeElement !== $("v-service")) $("v-service").value = ws.venture.service;
+  }
+
+  const customers = $("customers");
+  if (!ws.customers.length) {
+    customers.replaceChildren(el("div", "empty", t("ws_no_customers")));
+  } else {
+    customers.replaceChildren(table(
+      [t("th_customer"), t("th_notes"), t("th_added")],
+      ws.customers.map(c => [c.name, c.notes, fmtTime(c.created_at)])));
+  }
+
+  const select = $("d-customer");
+  const selected = select.value;
+  select.replaceChildren(...ws.customers.map(c => {
+    const option = el("option", null, c.name);
+    option.value = c.id;
+    return option;
+  }));
+  if (selected && ws.customers.some(c => c.id === selected)) select.value = selected;
+
+  const documents = $("documents");
+  if (!ws.documents.length) {
+    documents.replaceChildren(el("div", "empty", t("ws_no_documents")));
+  } else {
+    documents.replaceChildren(...[...ws.documents].reverse().map(d => {
+      const wrap = el("div", "doc");
+      const head = el("div", "doc-head");
+      head.appendChild(el("span", "badge neutral", t(d.kind === "offer" ? "kind_offer" : "kind_invoice")));
+      head.appendChild(el("span", "title", d.title));
+      const statusKind = { draft: "neutral", pending_approval: "warn", approved_pending_delivery: "good", rejected: "bad" }[d.status] || "neutral";
+      head.appendChild(badge(statusKind, t("status_" + d.status)));
+      if (d.status === "draft") {
+        const submit = el("button", "ghost small", t("ws_submit_send"));
+        submit.addEventListener("click", async () => {
+          const result = await api("/api/workspace/request-send", { document_id: d.id });
+          if (result.ok) { ws = result.workspace; renderWorkspace(); }
+          else $("d-status").textContent = result.error;
+        });
+        head.appendChild(submit);
+      }
+      wrap.appendChild(head);
+      const approvalWithEvidence = ws.approvals.find(a => a.document_id === d.id && a.evidence);
+      if (approvalWithEvidence) {
+        wrap.appendChild(el("div", "mono", t("ws_evidence")(approvalWithEvidence.evidence)));
+        if (approvalWithEvidence.evidence.outbox) {
+          wrap.appendChild(el("div", "mono", t("ws_outbox")(approvalWithEvidence.evidence.outbox)));
+        }
+      }
+      const details = el("details");
+      details.appendChild(el("summary", null, t("ws_view_content")));
+      details.appendChild(el("pre", null, d.body));
+      wrap.appendChild(details);
+      return wrap;
+    }));
+  }
+
+  const approvals = $("approvals");
+  const pending = ws.approvals.filter(a => a.status === "pending");
+  if (!pending.length) {
+    approvals.replaceChildren(el("div", "empty", t("ws_no_approvals")));
+  } else {
+    approvals.replaceChildren(...pending.map(a => {
+      const doc = ws.documents.find(d => d.id === a.document_id);
+      const row = el("div", "approval");
+      const info = el("div");
+      info.appendChild(el("div", null, t("ws_approval_for") + (doc ? doc.title : a.document_id)));
+      info.appendChild(el("div", "why", a.policy_reason));
+      row.appendChild(info);
+      const actions = el("div", "actions");
+      const approve = el("button", "approve", "✓ " + t("ws_approve"));
+      const reject = el("button", "reject", "✗ " + t("ws_reject"));
+      const decide = async (yes) => {
+        const result = await api("/api/workspace/decide", { approval_id: a.id, approve: yes });
+        if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
+      };
+      approve.addEventListener("click", () => decide(true));
+      reject.addEventListener("click", () => decide(false));
+      actions.appendChild(approve); actions.appendChild(reject);
+      row.appendChild(actions);
+      return row;
+    }));
+  }
+}
+
+async function saveVenture() {
+  const result = await api("/api/workspace/venture", { name: $("v-name").value, service: $("v-service").value });
+  $("v-status").textContent = result.ok ? t("saved") : result.error;
+  if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
+}
+
+async function addCustomer() {
+  const result = await api("/api/workspace/customer", { name: $("c-name").value, notes: $("c-notes").value });
+  if (result.ok) { $("c-name").value = ""; $("c-notes").value = ""; ws = result.workspace; renderWorkspace(); loadState(); }
+  else $("d-status").textContent = result.error;
+}
+
+async function createDocument(kind) {
+  const body = { customer_id: $("d-customer").value };
+  if (kind === "invoice") body.amount = $("d-amount").value;
+  const result = await api("/api/workspace/" + kind, body);
+  $("d-status").textContent = result.ok ? t("saved") : result.error;
+  if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
+}
+
+/* ─────────────── Security Center ─────────────── */
+
+function renderState() {
+  const state = lastState;
+  if (!state) return;
+  $("t-device").textContent = state.device_id ? t("device_ready") : t("device_none");
+  $("t-device-meta").textContent = state.device_id || t("device_hint");
+  $("t-events").textContent = state.ledger.count;
+  $("t-chain").replaceChildren(
+    state.ledger.present
+      ? badge(state.ledger.chain_ok ? "good" : "bad", state.ledger.chain_ok ? t("chain_ok") : t("chain_broken"))
+      : el("span", null, t("no_ledger_tile")));
+  $("t-vault").textContent = state.vault_entries.length;
+  $("t-plugins").textContent = state.plugins.length;
+
+  const plugins = $("plugins");
+  if (!state.plugins.length) {
+    plugins.replaceChildren(el("div", "empty", t("plugins_empty")));
+  } else {
+    plugins.replaceChildren(table(
+      [t("th_status"), t("th_component"), t("th_manifest"), t("th_risk"), t("th_backend"), t("th_admitted_by")],
+      state.plugins.map(p => p.verified
+        ? [badge("good", t("verified")), {mono: p.component_digest + "…"}, {mono: p.manifest_digest + "…"},
+           String(p.risk_class), String(p.backend), p.issuer]
+        : [badge("bad", t("unverified")), {mono: p.manifest_digest + "…"}, "", "", "", p.error])));
+  }
+
+  const ledger = $("ledger");
+  if (!state.ledger.present || (state.ledger.chain_ok && !state.ledger.events.length)) {
+    ledger.replaceChildren(el("div", "empty", t("ledger_empty")));
+  } else if (!state.ledger.chain_ok) {
+    const wrap = el("div", "empty");
+    wrap.appendChild(badge("bad", t("ledger_broken")));
+    wrap.appendChild(el("div", "mono", state.ledger.error || ""));
+    ledger.replaceChildren(wrap);
+  } else {
+    ledger.replaceChildren(table(
+      [t("th_time"), t("th_actor"), t("th_action"), t("th_resource"), t("th_hash")],
+      state.ledger.events.map(e =>
+        [new Date(e.timestamp).toLocaleString(locale()), e.actor, e.action, e.resource, {mono: e.hash + "…"}])));
+  }
+}
+
+function renderGauntlet() {
+  if (!lastGauntlet) return;
+  const box = $("gauntlet");
+  box.classList.remove("empty");
+  box.replaceChildren(...lastGauntlet.map(r => {
+    const localized = STRINGS[lang].attacks[r.key];
+    const row = el("div", "gauntlet-row");
+    const name = el("div", "name");
+    name.appendChild(badge(r.pass ? "good" : "bad", r.pass ? t("held") : t("failed")));
+    name.appendChild(document.createTextNode(" " + (localized ? localized.name : r.name)));
+    row.appendChild(name);
+    row.appendChild(el("div", "detail", localized ? localized.detail : r.detail));
+    return row;
+  }));
+  const failed = lastGauntlet.filter(r => !r.pass).length;
+  $("gauntlet-status").textContent = failed ? t("violated")(failed) : t("all_held")(lastGauntlet.length);
+}
+
+async function loadState() {
+  try {
+    lastState = await (await fetch("/api/state")).json();
+    renderState();
+  } catch (error) {
+    $("stage") && ($("stage").textContent = t("state_failed") + error);
+  }
+}
+
+async function runGauntlet() {
+  const button = $("run");
+  button.disabled = true;
+  $("gauntlet-status").textContent = t("running");
+  try {
+    const data = await api("/api/gauntlet");
+    if (!data.ok) {
+      $("gauntlet").replaceChildren(el("div", "empty", t("gauntlet_error") + data.error));
+    } else {
+      lastGauntlet = data.results;
+      renderGauntlet();
+    }
+  } catch (error) {
+    $("gauntlet-status").textContent = t("request_failed") + error;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ─────────────── Shell ─────────────── */
+
+function applyLanguage() {
+  document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  $("lang-en").classList.toggle("active", lang === "en");
+  $("lang-zh").classList.toggle("active", lang === "zh");
+  document.querySelectorAll("[data-i18n]").forEach(node => {
+    const value = t(node.dataset.i18n);
+    if (typeof value === "string") node.textContent = value;
+  });
+  renderState();
+  renderGauntlet();
+  renderWorkspace();
+}
+
+function setLanguage(next) {
+  lang = next;
+  localStorage.setItem("sovereign-ui-lang", next);
+  applyLanguage();
+}
+
+function setView(next) {
+  view = next;
+  localStorage.setItem("sovereign-ui-view", next);
+  $("view-workspace").hidden = next !== "workspace";
+  $("view-security").hidden = next !== "security";
+  $("tab-workspace").classList.toggle("active", next === "workspace");
+  $("tab-security").classList.toggle("active", next === "security");
+}
+
+$("lang-en").addEventListener("click", () => setLanguage("en"));
+$("lang-zh").addEventListener("click", () => setLanguage("zh"));
+$("tab-workspace").addEventListener("click", () => setView("workspace"));
+$("tab-security").addEventListener("click", () => setView("security"));
+$("v-save").addEventListener("click", saveVenture);
+$("c-add").addEventListener("click", addCustomer);
+$("d-offer").addEventListener("click", () => createDocument("offer"));
+$("d-invoice").addEventListener("click", () => createDocument("invoice"));
+$("run").addEventListener("click", runGauntlet);
+$("refresh").addEventListener("click", loadState);
+
+applyLanguage();
+setView(view);
+loadState();
+loadWorkspace();
+</script>
+</body>
+</html>

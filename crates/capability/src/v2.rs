@@ -2,9 +2,11 @@
 //!
 //! This module does not upgrade or accept a V1 token. It accepts only the
 //! artifact layer's opaque [`PreparedInvocation`], which prevents callers from
-//! inventing digest views that were never prepared by the artifact boundary. Replay and idempotency
-//! state is process-local in this stage, so effectful execution remains
-//! disabled until the durable Authority Store exists.
+//! inventing digest views that were never prepared by the artifact boundary.
+//! Replay and idempotency defense is process-local by default; attaching a
+//! durable [`AuthorityStore`] makes consumption survive restarts and
+//! concurrent processes. Effectful execution additionally requires crash-safe
+//! audit ordering and reviewed host interfaces, which do not exist yet.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -14,8 +16,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 use sovereign_artifact::{
     ArtifactBackend, Digest, PreparedInvocation, RiskClass, CANONICALIZATION_PROFILE,
 };
-use sovereign_identity::{AuthorityRole, IdentityError, RoleTrustStore, TypedSigner};
+use sovereign_identity::{ApprovalRole, AuthorityRole, IdentityError, RoleTrustStore, TypedSigner};
 use sovereign_policy::PolicyAuthorizationV2;
+
+use sovereign_authority::{AuthorityError, AuthorityStore};
+
+use crate::approval::SignedApprovalV1;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -44,11 +50,12 @@ pub struct ToolScopeV2 {
     pub operation: String,
 }
 
-/// Reserved signed evidence shape for a later approval protocol.
+/// Summary claim carried by a token issued under RFC 0003 approval evidence.
 ///
-/// Capability V2 in this stage never issues or accepts this evidence. Keeping
-/// the explicit nullable claim prevents a future approval path from being
-/// silently confused with today's no-approval path.
+/// This is a reference to the signed approval, not the approval itself: the
+/// full COSE object is re-verified at consumption. Tokens for decisions that
+/// do not require approval carry an explicit null and any other combination
+/// fails closed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApprovalEvidenceV2 {
@@ -165,8 +172,10 @@ impl TrustedClock for SystemClock {
 pub enum CapabilityV2Error {
     #[error("policy denied the prepared invocation")]
     PolicyDenied,
-    #[error("approval evidence is required but is not implemented for Capability V2")]
+    #[error("approval evidence is required and was not provided")]
     ApprovalEvidenceUnavailable,
+    /// Retained for API compatibility; RFC 0003 paths report the precise
+    /// `UnexpectedApprovalEvidence` / `ApprovalEvidenceMismatch` variants.
     #[error("approval evidence is unsupported in this Capability V2 stage")]
     UnsupportedApprovalEvidence,
     #[error("policy authorization does not exactly match the prepared invocation: {0}")]
@@ -251,6 +260,44 @@ pub enum CapabilityV2Error {
     IdempotencyReplay,
     #[error("idempotency key reused for a different invocation")]
     IdempotencyConflict,
+    #[error("approval evidence supplied for a decision that does not require approval")]
+    UnexpectedApprovalEvidence,
+    #[error("no approval trust store is configured")]
+    ApprovalTrustUnavailable,
+    #[error("approval lifetime must be positive and no more than ten minutes")]
+    ApprovalLifetimeInvalid,
+    #[error("invalid approval claims")]
+    InvalidApprovalClaims,
+    #[error("approval payload is not canonical JCS")]
+    NonCanonicalApproval,
+    #[error("approval does not match the presented invocation or decision: {0}")]
+    ApprovalMismatch(&'static str),
+    #[error("approval has expired")]
+    ApprovalExpired,
+    #[error("approval is dated in the future")]
+    ApprovalFromFuture,
+    #[error("approval was already consumed in this process")]
+    ApprovalReused,
+    #[error("approval evidence in the token does not match the presented approval")]
+    ApprovalEvidenceMismatch,
+    #[error("approval signing key is not trusted")]
+    UnknownApprovalKey,
+    #[error("approval issuer mismatch")]
+    ApprovalIssuerMismatch,
+    #[error("approval signing key is revoked")]
+    ApprovalKeyRevoked,
+    #[error("approval signing key is not yet valid")]
+    ApprovalKeyNotYetValid,
+    #[error("approval signing key has expired")]
+    ApprovalKeyExpired,
+    #[error("invalid approval signature")]
+    InvalidApprovalSignature,
+    #[error("approval envelope is malformed or non-canonical")]
+    InvalidApprovalEnvelope,
+    #[error("approval verification failed")]
+    ApprovalVerificationFailed,
+    #[error("durable authority store unavailable or corrupt; execution denied")]
+    AuthorityStoreUnavailable,
 }
 
 #[derive(Debug, Clone)]
@@ -282,6 +329,13 @@ pub struct CapabilityIssuerV2<C: TrustedClock> {
     signer: TypedSigner<AuthorityRole>,
     audience: String,
     clock: C,
+    approvals: Option<ApprovalTrust>,
+}
+
+#[derive(Debug)]
+struct ApprovalTrust {
+    trust: RoleTrustStore<ApprovalRole>,
+    expected_issuer: String,
 }
 
 impl<C: TrustedClock> CapabilityIssuerV2<C> {
@@ -297,7 +351,24 @@ impl<C: TrustedClock> CapabilityIssuerV2<C> {
             signer,
             audience,
             clock,
+            approvals: None,
         })
+    }
+
+    /// Enable RFC 0003 approval-evidence issuance. Without this, every
+    /// approval-required request continues to fail closed.
+    pub fn with_approval_trust(
+        mut self,
+        trust: RoleTrustStore<ApprovalRole>,
+        expected_approver_issuer: impl Into<String>,
+    ) -> Result<Self, CapabilityV2Error> {
+        let expected_issuer = expected_approver_issuer.into();
+        validate_identifier(&expected_issuer, CapabilityV2Error::InvalidIssuer)?;
+        self.approvals = Some(ApprovalTrust {
+            trust,
+            expected_issuer,
+        });
+        Ok(self)
     }
 
     pub fn audience(&self) -> &str {
@@ -312,6 +383,25 @@ impl<C: TrustedClock> CapabilityIssuerV2<C> {
         &self,
         request: CapabilityV2IssueRequest<'_>,
     ) -> Result<CapabilityTokenV2, CapabilityV2Error> {
+        self.issue_inner(request, None)
+    }
+
+    /// Issue for an approval-required decision using RFC 0003 signed
+    /// evidence. Fails closed unless an approval trust store is configured
+    /// and the evidence binds this exact invocation and decision.
+    pub fn issue_approved(
+        &self,
+        request: CapabilityV2IssueRequest<'_>,
+        approval: &SignedApprovalV1,
+    ) -> Result<CapabilityTokenV2, CapabilityV2Error> {
+        self.issue_inner(request, Some(approval))
+    }
+
+    fn issue_inner(
+        &self,
+        request: CapabilityV2IssueRequest<'_>,
+        approval: Option<&SignedApprovalV1>,
+    ) -> Result<CapabilityTokenV2, CapabilityV2Error> {
         validate_identifier(request.venture_id, CapabilityV2Error::InvalidVenture)?;
         validate_identifier(request.subject_id, CapabilityV2Error::InvalidSubject)?;
         validate_supported_invocation(request.prepared_invocation)?;
@@ -325,14 +415,46 @@ impl<C: TrustedClock> CapabilityIssuerV2<C> {
             request.options.idempotency_key,
             request.prepared_invocation,
         )?;
-        validate_policy_freshness(request.policy_decision, issued_at_unix)?;
+        let max_policy_age = if approval.is_some() {
+            crate::approval::APPROVAL_MAX_TTL_SECONDS
+        } else {
+            CAPABILITY_V2_MAX_POLICY_AGE_SECONDS
+        };
+        validate_policy_freshness(request.policy_decision, issued_at_unix, max_policy_age)?;
 
         if !request.policy_decision.allowed() {
             return Err(CapabilityV2Error::PolicyDenied);
         }
-        if request.policy_decision.requires_approval() {
-            return Err(CapabilityV2Error::ApprovalEvidenceUnavailable);
-        }
+        let approval_evidence = match (request.policy_decision.requires_approval(), approval) {
+            (true, None) => return Err(CapabilityV2Error::ApprovalEvidenceUnavailable),
+            (false, Some(_)) => return Err(CapabilityV2Error::UnexpectedApprovalEvidence),
+            (false, None) => None,
+            (true, Some(approval)) => {
+                let trust = self
+                    .approvals
+                    .as_ref()
+                    .ok_or(CapabilityV2Error::ApprovalTrustUnavailable)?;
+                let claims = crate::approval::verify_approval(
+                    approval,
+                    crate::approval::ApprovalVerificationContext {
+                        trust: &trust.trust,
+                        expected_issuer: &trust.expected_issuer,
+                        audience: &self.audience,
+                        venture_id: request.venture_id,
+                        subject_id: request.subject_id,
+                        session_id: request.session_id,
+                        policy_decision: request.policy_decision,
+                        prepared: request.prepared_invocation,
+                        now_unix: issued_at_unix,
+                    },
+                )?;
+                Some(ApprovalEvidenceV2 {
+                    approval_id: claims.approval_id,
+                    approver_subject_id: claims.approver_subject_id,
+                    approved_at_unix: claims.approved_at_unix,
+                })
+            }
+        };
 
         let ttl_seconds = request.options.ttl.num_seconds();
         if ttl_seconds <= 0 || ttl_seconds > CAPABILITY_V2_MAX_TTL_SECONDS {
@@ -368,7 +490,7 @@ impl<C: TrustedClock> CapabilityIssuerV2<C> {
             primary_resource: primary_resource.to_owned(),
             policy_decision_id: request.policy_decision.decision_id(),
             policy_decision_digest: policy_decision_digest(request.policy_decision)?,
-            approval_evidence: None,
+            approval_evidence,
             idempotency_key: request.options.idempotency_key,
             issued_at_unix,
             expires_at_unix,
@@ -407,6 +529,9 @@ pub struct CapabilityValidatorV2<C: TrustedClock> {
     clock: C,
     consumed_tokens: HashSet<Uuid>,
     idempotency: HashMap<Uuid, Digest>,
+    approvals: Option<ApprovalTrust>,
+    consumed_approvals: HashSet<Uuid>,
+    authority_store: Option<AuthorityStore>,
 }
 
 impl<C: TrustedClock> CapabilityValidatorV2<C> {
@@ -427,7 +552,35 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
             clock,
             consumed_tokens: HashSet::new(),
             idempotency: HashMap::new(),
+            approvals: None,
+            consumed_approvals: HashSet::new(),
+            authority_store: None,
         })
+    }
+
+    /// Enable RFC 0003 approval-evidence validation. Without this, every
+    /// token carrying approval evidence continues to fail closed.
+    pub fn with_approval_trust(
+        mut self,
+        trust: RoleTrustStore<ApprovalRole>,
+        expected_approver_issuer: impl Into<String>,
+    ) -> Result<Self, CapabilityV2Error> {
+        let expected_issuer = expected_approver_issuer.into();
+        validate_identifier(&expected_issuer, CapabilityV2Error::InvalidIssuer)?;
+        self.approvals = Some(ApprovalTrust {
+            trust,
+            expected_issuer,
+        });
+        Ok(self)
+    }
+
+    /// Attach a durable Authority Store. Consumption of tokens, approvals,
+    /// and idempotency keys then survives restarts and concurrent processes;
+    /// a store failure denies execution (fail closed). Without a store,
+    /// replay defense remains process-local, as documented.
+    pub fn with_authority_store(mut self, store: AuthorityStore) -> Self {
+        self.authority_store = Some(store);
+        self
     }
 
     /// Verify every binding and consume the one-use token before guest startup.
@@ -437,6 +590,20 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
         &mut self,
         token: &CapabilityTokenV2,
         context: CapabilityV2ValidationContext<'_>,
+    ) -> Result<AuthorizedCapabilityV2, CapabilityV2Error> {
+        self.authorize_and_consume_approved(token, context, None)
+    }
+
+    /// Like [`Self::authorize_and_consume`], additionally presenting the RFC
+    /// 0003 signed approval whenever the token carries approval evidence.
+    /// Both sides are re-verified so consumption observes the same evidence
+    /// bytes that issuance did; the approval id is consumed at most once per
+    /// process.
+    pub fn authorize_and_consume_approved(
+        &mut self,
+        token: &CapabilityTokenV2,
+        context: CapabilityV2ValidationContext<'_>,
+        approval: Option<&SignedApprovalV1>,
     ) -> Result<AuthorizedCapabilityV2, CapabilityV2Error> {
         if token.as_bytes().len() > CAPABILITY_V2_MAX_TOKEN_BYTES {
             return Err(CapabilityV2Error::TokenTooLarge);
@@ -475,9 +642,6 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
         if claims.max_uses != 1 {
             return Err(CapabilityV2Error::InvalidUseLimit);
         }
-        if claims.approval_evidence.is_some() {
-            return Err(CapabilityV2Error::UnsupportedApprovalEvidence);
-        }
         if claims.risk_class != RiskClass::PureCompute {
             return Err(CapabilityV2Error::UnsupportedRiskClass);
         }
@@ -505,12 +669,14 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
             claims.idempotency_key,
             context.prepared_invocation,
         )?;
-        validate_policy_freshness(context.policy_decision, now_unix)?;
+        let max_policy_age = if claims.approval_evidence.is_some() {
+            crate::approval::APPROVAL_MAX_TTL_SECONDS
+        } else {
+            CAPABILITY_V2_MAX_POLICY_AGE_SECONDS
+        };
+        validate_policy_freshness(context.policy_decision, now_unix, max_policy_age)?;
         if !context.policy_decision.allowed() {
             return Err(CapabilityV2Error::PolicyDenied);
-        }
-        if context.policy_decision.requires_approval() {
-            return Err(CapabilityV2Error::ApprovalEvidenceUnavailable);
         }
         if claims.policy_decision_id != context.policy_decision.decision_id()
             || claims.policy_decision_digest != policy_decision_digest(context.policy_decision)?
@@ -523,6 +689,53 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
         if self.consumed_tokens.contains(&claims.token_id) {
             return Err(CapabilityV2Error::Replay);
         }
+
+        // RFC 0003: the token's evidence claim, the presented signed object,
+        // and the policy requirement must all agree. Any partial combination
+        // fails closed.
+        let approval_id = match (
+            context.policy_decision.requires_approval(),
+            &claims.approval_evidence,
+            approval,
+        ) {
+            (false, None, None) => None,
+            (true, None, _) => return Err(CapabilityV2Error::ApprovalEvidenceUnavailable),
+            (false, _, Some(_)) | (false, Some(_), None) => {
+                return Err(CapabilityV2Error::UnexpectedApprovalEvidence)
+            }
+            (true, Some(_), None) => return Err(CapabilityV2Error::ApprovalEvidenceMismatch),
+            (true, Some(evidence), Some(approval)) => {
+                let trust = self
+                    .approvals
+                    .as_ref()
+                    .ok_or(CapabilityV2Error::ApprovalTrustUnavailable)?;
+                let verified = crate::approval::verify_approval(
+                    approval,
+                    crate::approval::ApprovalVerificationContext {
+                        trust: &trust.trust,
+                        expected_issuer: &trust.expected_issuer,
+                        audience: &self.expected_audience,
+                        venture_id: context.venture_id,
+                        subject_id: context.subject_id,
+                        session_id: context.session_id,
+                        policy_decision: context.policy_decision,
+                        prepared: context.prepared_invocation,
+                        now_unix,
+                    },
+                )?;
+                if verified.approval_id != evidence.approval_id
+                    || verified.approver_subject_id != evidence.approver_subject_id
+                    || verified.approved_at_unix != evidence.approved_at_unix
+                {
+                    return Err(CapabilityV2Error::ApprovalEvidenceMismatch);
+                }
+                if self.consumed_approvals.contains(&verified.approval_id) {
+                    return Err(CapabilityV2Error::ApprovalReused);
+                }
+                Some(verified.approval_id)
+            }
+        };
+
         let fingerprint = invocation_fingerprint(&claims)?;
         if let Some(existing) = self.idempotency.get(&claims.idempotency_key) {
             if *existing == fingerprint {
@@ -531,8 +744,33 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
             return Err(CapabilityV2Error::IdempotencyConflict);
         }
 
+        // Durable claims come after every validation and before the
+        // process-local bookkeeping. A partial failure burns the earlier
+        // claims and denies the request: fail closed, never fail open.
+        if let Some(store) = &self.authority_store {
+            store
+                .consume_token(claims.token_id, now_unix, claims.expires_at_unix)
+                .map_err(map_authority_error_token)?;
+            store
+                .bind_idempotency(
+                    claims.idempotency_key,
+                    fingerprint.as_bytes(),
+                    now_unix,
+                    claims.expires_at_unix,
+                )
+                .map_err(map_authority_error_idempotency)?;
+            if let Some(approval_id) = approval_id {
+                store
+                    .consume_approval(approval_id, now_unix, claims.expires_at_unix)
+                    .map_err(map_authority_error_approval)?;
+            }
+        }
+
         self.consumed_tokens.insert(claims.token_id);
         self.idempotency.insert(claims.idempotency_key, fingerprint);
+        if let Some(approval_id) = approval_id {
+            self.consumed_approvals.insert(approval_id);
+        }
         Ok(AuthorizedCapabilityV2 { claims })
     }
 }
@@ -738,9 +976,14 @@ fn validate_policy_authorization(
     Ok(())
 }
 
+/// The default freshness window is tight because unattended issuance should
+/// be immediate. With verified approval evidence, RFC 0003 extends the window
+/// to the approval TTL: a human cannot review and click within 30 seconds,
+/// and the signed approval attests review of that exact decision.
 fn validate_policy_freshness(
     decision: &PolicyAuthorizationV2,
     now_unix: i64,
+    max_age_seconds: i64,
 ) -> Result<(), CapabilityV2Error> {
     let age = now_unix
         .checked_sub(decision.evaluated_at_unix())
@@ -748,7 +991,7 @@ fn validate_policy_freshness(
     if age < 0 {
         return Err(CapabilityV2Error::PolicyAuthorizationFromFuture);
     }
-    if age > CAPABILITY_V2_MAX_POLICY_AGE_SECONDS {
+    if age > max_age_seconds {
         return Err(CapabilityV2Error::PolicyAuthorizationStale);
     }
     Ok(())
@@ -822,6 +1065,28 @@ fn compare_invocation_claims(
         return Err(CapabilityV2Error::InvocationMismatch("backend"));
     }
     Ok(())
+}
+
+fn map_authority_error_token(error: AuthorityError) -> CapabilityV2Error {
+    match error {
+        AuthorityError::AlreadyConsumed => CapabilityV2Error::Replay,
+        _ => CapabilityV2Error::AuthorityStoreUnavailable,
+    }
+}
+
+fn map_authority_error_idempotency(error: AuthorityError) -> CapabilityV2Error {
+    match error {
+        AuthorityError::IdempotencyReplay => CapabilityV2Error::IdempotencyReplay,
+        AuthorityError::IdempotencyConflict => CapabilityV2Error::IdempotencyConflict,
+        _ => CapabilityV2Error::AuthorityStoreUnavailable,
+    }
+}
+
+fn map_authority_error_approval(error: AuthorityError) -> CapabilityV2Error {
+    match error {
+        AuthorityError::AlreadyConsumed => CapabilityV2Error::ApprovalReused,
+        _ => CapabilityV2Error::AuthorityStoreUnavailable,
+    }
 }
 
 fn map_identity_error(error: IdentityError) -> CapabilityV2Error {

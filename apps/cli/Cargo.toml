@@ -12,13 +12,31 @@ name = "sovereign"
 path = "src/main.rs"
 
 [dependencies]
+sovereign-artifact = { workspace = true }
 sovereign-audit-ledger = { workspace = true }
+sovereign-authority = { workspace = true }
 sovereign-capability = { workspace = true }
 sovereign-contracts = { workspace = true }
+sovereign-effects = { workspace = true }
+sovereign-execution = { workspace = true }
 sovereign-identity = { workspace = true }
+sovereign-model = { workspace = true }
 sovereign-policy = { workspace = true }
 sovereign-sandbox = { workspace = true }
 sovereign-vault = { workspace = true }
+sovereign-workflow = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
+hex = { workspace = true }
 dirs = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
+serde_json_canonicalizer = { workspace = true }
+tiny_http = "0.12"
+uuid = { workspace = true }
+wat = "1"
+
+[dev-dependencies]
+tempfile = "3"

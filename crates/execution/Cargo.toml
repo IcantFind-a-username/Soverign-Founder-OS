@@ -1,6 +1,6 @@
 [package]
-name = "sovereign-artifact"
-description = "Verified plugin artifacts and exact invocation preparation for Sovereign Runtime"
+name = "sovereign-execution"
+description = "Crash-safe execution intent/result journal for Sovereign Runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,15 +8,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_json_canonicalizer = { workspace = true }
-sha2 = { workspace = true }
-sovereign-identity = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tempfile = "3"

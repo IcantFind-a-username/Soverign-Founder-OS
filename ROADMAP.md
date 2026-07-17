@@ -52,42 +52,51 @@ Sovereign Runtime secure kernel
     - [x] Role-separated COSE/JCS publisher manifest verification
     - [x] Immutable artifact snapshot, strict schema/resource binding, and `PreparedInvocation`
     - [x] Exact-bound Capability V2 and verified pure-compute Core Wasm path (process-local)
-    - [ ] Locally signed admission record and content-addressed artifact store
+    - [x] Locally signed admission record and content-addressed artifact store
+    - [x] Signed human approval evidence bound into Capability V2 (RFC 0003, process-local one-use)
+    - [ ] Verified executor requires a locally admitted artifact handle
     - [ ] Killable compilation worker and trusted compiled cache
     - [ ] Component/WIT input ABI
   - [ ] Phase C: durable authorization and crash-safe evidence
+    - [x] Durable Authority Store: atomic cross-process one-use consumption of tokens, approvals, and idempotency keys
+    - [x] Crash-safe execution journal: durable intent before consume, terminal result after, Indeterminate recovery
+    - [ ] Crash-safe signed-audit intent/result ordering (ledger migration) and execution receipts
   - [ ] Phase D: reviewed WIT host interfaces and high-risk backend
+    - [x] First host effect: audited, path-safe local outbox file-write broker (no network)
+    - [ ] Reviewed WIT Component host interface and per-host-call authorization
 - [ ] Adversarial integration tests
   - [x] Phase A: malicious Wasm import, loop, memory, table, ABI, and state tests
   - [x] Phase B foundation: manifest/artifact/input substitution, strict fields, trust state, V1/V2 separation, same-process replay, and backend downgrade tests
+  - [x] Admission store: on-disk substitution, record forgery/cross-role, revoked-key, poisoned-entry, orphan-temp, and symlink tests
   - [ ] Full Stage 1 authorization, replay, audit, and backend downgrade suite
 
 **Exit criteria:** A malicious agent cannot read files or execute external actions without authorization.
 
 ---
 
-### Stage 2: Model Resilience
+### Stage 2: Model Resilience — Minimal foundation
 
 **Deliverables:**
-- Unified model interface
-- Multi-vendor routing (≥2 cloud + 1 local)
-- Health detection
-- Automatic degradation and failover
+- [x] Unified model interface (`crates/model`: `ModelProvider` trait, `ModelGateway`)
+- [x] Ordered multi-provider routing with local/cloud trust
+- [x] Health detection (Healthy/Degraded/Down) and automatic failover
+- [x] Data-disclosure records and a Red-data-stays-local guard
+- [ ] Real provider adapters behind an egress broker (deterministic stand-ins today)
 
-**Exit criteria:** Removing the primary model configuration does not stop core workflows.
+**Exit criteria:** Removing the primary model configuration does not stop core workflows. *(Demonstrated: `sovereign model-check`; providers are deterministic local stand-ins, not LLMs.)*
 
 ---
 
-### Stage 3: Workflow Recovery
+### Stage 3: Workflow Recovery — Minimal foundation
 
 **Deliverables:**
-- Workflow checkpoints
-- Idempotency keys
-- Event replay
-- Encrypted backup targets
-- Node promotion and failover
+- [x] Durable workflow checkpoints (`crates/workflow`, crash-safe atomic rewrite)
+- [x] Deterministic per-step idempotency keys (UUID v5)
+- [x] Step replay: completed steps are never re-executed on resume
+- [ ] Encrypted backup targets
+- [ ] Multi-machine node promotion and failover (replication, leases)
 
-**Exit criteria:** Killing the primary process allows another node to recover from the last valid event.
+**Exit criteria:** Killing the primary process allows another node to recover from the last valid step. *(Demonstrated: `sovereign workflow-demo`; "another node" is another runner over the same durable directory.)*
 
 ---
 

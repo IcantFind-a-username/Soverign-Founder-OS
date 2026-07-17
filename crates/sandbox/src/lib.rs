@@ -3,13 +3,15 @@ mod wasm;
 use std::collections::BTreeSet;
 
 use chrono::Utc;
-use sovereign_artifact::{OperationSelector, PreparedInvocation};
+use sovereign_artifact::{Digest, OperationSelector, PreparedInvocation};
+use sovereign_capability::approval::SignedApprovalV1;
 use sovereign_capability::v2::{
     CapabilityTokenV2, CapabilityV2Error, CapabilityV2ValidationContext, CapabilityValidatorV2,
     TrustedClock as CapabilityV2Clock,
 };
 use sovereign_capability::{CapabilityError, CapabilityValidator, ValidationContext};
 use sovereign_contracts::CapabilityToken;
+use sovereign_execution::{ExecutionIntent, ExecutionJournal, ExecutionOutcome, JournalError};
 use sovereign_policy::PolicyAuthorizationV2;
 use thiserror::Error;
 use uuid::Uuid;
@@ -56,6 +58,30 @@ pub enum SandboxError {
     ResourceLimitExceeded(String),
     #[error("WebAssembly guest trapped: {0}")]
     GuestTrap(String),
+    #[error("execution intent could not be persisted; execution denied")]
+    ExecutionIntentNotPersisted,
+    #[error("execution journal unavailable: {0}")]
+    ExecutionJournalUnavailable(String),
+}
+
+impl SandboxError {
+    /// Stable failure code for journal terminal records. Raw engine strings
+    /// are diagnostic detail, not part of this stable taxonomy.
+    pub fn stable_code(&self) -> &'static str {
+        match self {
+            Self::FuelExhausted => "fuel_exhausted",
+            Self::DeadlineExceeded => "deadline_exceeded",
+            Self::ResourceLimitExceeded(_) => "resource_limit",
+            Self::GuestTrap(_) => "guest_trap",
+            Self::MissingEntrypoint(_) => "missing_abi",
+            Self::InvalidEntrypoint { .. } => "incompatible_abi",
+            Self::InvalidModule(_) => "invalid_module",
+            Self::InstantiationFailed(_) => "instantiate_failed",
+            Self::ForbiddenImport { .. } => "forbidden_import",
+            Self::ModuleTooLarge { .. } => "module_too_large",
+            _ => "execution_failed",
+        }
+    }
 }
 
 pub struct ExecutionRequest<'a> {
@@ -164,6 +190,7 @@ pub struct VerifiedSandboxExecutor<C: CapabilityV2Clock> {
     validator: CapabilityValidatorV2<C>,
     allowed_operations: BTreeSet<OperationSelector>,
     wasm: WasmSandbox,
+    journal: Option<ExecutionJournal>,
 }
 
 impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
@@ -183,12 +210,34 @@ impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
             validator,
             allowed_operations: allowed_operations.into_iter().collect(),
             wasm: WasmSandbox::new(wasm_limits)?,
+            journal: None,
         })
+    }
+
+    /// Attach a crash-safe execution journal. Intent is then durably recorded
+    /// before the capability is consumed (RFC 0002 ordering), and a terminal
+    /// verdict is recorded after execution. If intent cannot be persisted,
+    /// execution is denied. Without a journal, behavior is unchanged.
+    pub fn with_execution_journal(mut self, journal: ExecutionJournal) -> Self {
+        self.journal = Some(journal);
+        self
     }
 
     pub fn execute(
         &mut self,
         request: VerifiedExecutionRequest<'_>,
+    ) -> Result<WasmExecutionResult, SandboxError> {
+        self.execute_approved(request, None)
+    }
+
+    /// Execute with RFC 0003 signed approval evidence for approval-required
+    /// decisions. `execute` delegates here with no evidence; tokens carrying
+    /// an approval claim fail closed unless the matching signed approval is
+    /// presented and the validator was configured with approval trust.
+    pub fn execute_approved(
+        &mut self,
+        request: VerifiedExecutionRequest<'_>,
+        approval: Option<&SignedApprovalV1>,
     ) -> Result<WasmExecutionResult, SandboxError> {
         let selector = request.invocation.operation();
         if !self.allowed_operations.contains(selector) {
@@ -197,7 +246,27 @@ impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
             });
         }
 
-        self.validator.authorize_and_consume(
+        // RFC 0002 ordering: durable intent BEFORE consuming the capability,
+        // so that a crash cannot execute without leaving a recoverable trace.
+        let guard = match &self.journal {
+            Some(journal) => Some(
+                journal
+                    .begin(ExecutionIntent {
+                        execution_id: Uuid::new_v4(),
+                        component_digest_hex: request
+                            .invocation
+                            .artifact()
+                            .component_digest()
+                            .as_hex(),
+                        canonical_input_digest_hex: request.invocation.input_digest().as_hex(),
+                        requested_at_unix: Utc::now().timestamp(),
+                    })
+                    .map_err(map_journal_error)?,
+            ),
+            None => None,
+        };
+
+        let authorized = self.validator.authorize_and_consume_approved(
             request.token,
             CapabilityV2ValidationContext {
                 venture_id: request.venture_id,
@@ -206,9 +275,51 @@ impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
                 policy_decision: request.policy_decision,
                 prepared_invocation: request.invocation,
             },
-        )?;
+            approval,
+        );
+        if let Err(error) = authorized {
+            // Authorization denied: nothing executed. Record a terminal
+            // Failed so recovery never sees this as indeterminate.
+            if let Some(guard) = guard {
+                let _ = guard.finish(ExecutionOutcome::Failed {
+                    code: "authorization_denied".into(),
+                });
+            }
+            return Err(error.into());
+        }
 
-        self.wasm.execute_verified(request.invocation)
+        if let Some(guard) = &guard {
+            guard.started().map_err(map_journal_error)?;
+        }
+
+        let result = self.wasm.execute_verified(request.invocation);
+        if let Some(guard) = guard {
+            let outcome = match &result {
+                Ok(execution) => ExecutionOutcome::Completed {
+                    result_hash_hex: result_hash(execution),
+                },
+                Err(error) => ExecutionOutcome::Failed {
+                    code: error.stable_code().into(),
+                },
+            };
+            guard.finish(outcome).map_err(map_journal_error)?;
+        }
+        result
+    }
+}
+
+fn result_hash(result: &WasmExecutionResult) -> String {
+    let descriptor = serde_json::json!({
+        "exit_code": result.exit_code,
+        "fuel_consumed": result.fuel_consumed,
+    });
+    Digest::of_bytes(&serde_json::to_vec(&descriptor).unwrap_or_default()).as_hex()
+}
+
+fn map_journal_error(error: JournalError) -> SandboxError {
+    match error {
+        JournalError::IntentNotPersisted => SandboxError::ExecutionIntentNotPersisted,
+        other => SandboxError::ExecutionJournalUnavailable(other.to_string()),
     }
 }
 

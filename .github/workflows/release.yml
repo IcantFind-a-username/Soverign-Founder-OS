@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-linux
+            binary: sovereign
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-macos
+            binary: sovereign
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-windows
+            binary: sovereign.exe
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Build release binary
+        run: cargo build -p sovereign-cli --release --locked
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="sovereign-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir "$NAME"
+          cp "target/release/${{ matrix.binary }}" "$NAME/"
+          cp README.md LICENSE NOTICE "$NAME/"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a "$NAME.zip" "$NAME"
+            echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
+          else
+            tar -czf "$NAME.tar.gz" "$NAME"
+            echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" --generate-notes 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber

@@ -120,7 +120,7 @@ COSE signature verification uses the standard `Signature1` structure and a non-e
 content-type                                           external AAD                              status
 application/sovereign.plugin-manifest+json;v=1         sovereign:plugin-manifest:v1              implemented
 application/sovereign.capability+json;v=2              sovereign:capability:v2                   implemented
-application/sovereign.artifact-admission+json;v=1      sovereign:artifact-admission:v1           target
+application/sovereign.artifact-admission+json;v=1      sovereign:artifact-admission:v1           implemented
 application/sovereign.audit-event+json;v=1             sovereign:audit-event:v1                  primitive only; ledger migration pending
 application/sovereign.compiled-cache-record+json;v=1  sovereign:compiled-cache-record:v1        target
 ```
@@ -159,7 +159,7 @@ Admission operates on owned immutable bytes, not on a caller-controlled path tha
 
 If any step fails, no trusted registry entry is published. An existing content-addressed entry is reused only after its bytes are rehashed and matched; its filename is never evidence of its contents. Orphan temporary files or cache entries are untrusted and may be collected, but must never become executable through recovery or fallback logic.
 
-The current foundation implements the in-memory portions of steps 1–5 and returns `VerifiedArtifact`: it enforces ceilings, snapshots owned bytes, verifies publisher COSE and trust state with an internal trusted clock, compares the component digest, and validates the Core Wasm manifest, operations, strict schemas, bindings, risk, and empty host-capability set. Steps 6–8—the content-addressed store, local admission signature/record, and `AdmittedArtifact` transition—are not implemented.
+The current foundation implements the in-memory portions of steps 1–5 and returns `VerifiedArtifact`: it enforces ceilings, snapshots owned bytes, verifies publisher COSE and trust state with an internal trusted clock, compares the component digest, and validates the Core Wasm manifest, operations, strict schemas, bindings, risk, and empty host-capability set. Steps 6–8 are implemented by `ArtifactStore` for pure-compute artifacts: verified bytes and the canonical manifest payload are written to an owner-controlled content-addressed store via exclusive temporary creation, flush, atomic rename, and directory flush; existing entries are reused only after rehashing; and a record signed under the `artifact-admission` role binds the component digest, manifest digest, risk class, backend, ABI, empty effective host capabilities, and installation state into an `AdmittedArtifact`. Loading re-verifies the record against a role-specific trust store and re-derives every digest from the stored bytes. The execution path does not yet require the admitted handle, and concurrent multi-process admission is not serialized.
 
 ## Exact Invocation Binding
 
@@ -190,7 +190,7 @@ canonical_input_digest
 resource_bindings_digest
 primary_resource
 policy_decision_id and policy_digest
-approval_evidence (explicitly null in the current foundation)
+approval_evidence (RFC 0003 summary claim; null when no approval is required)
 idempotency_key
 issued_at and expires_at
 max_uses = 1
@@ -199,7 +199,7 @@ backend = core_wasm
 canonicalization_profile = rfc8785-jcs+sovereign-digest-v1
 ```
 
-Stage 1 Capability V1 tokens do not contain all these bindings. They may gate the initial import-free isolation slice, but must never authorize real host side effects. Capability V2 is necessary but not sufficient before effectful host interfaces are enabled: durable Authority Store consumption, verified approval evidence where required, crash-safe evidence ordering, local artifact admission, and reviewed host interfaces are also mandatory. The current V2 issuer rejects every approval-required request, and the validator rejects any self-supplied non-null approval evidence.
+Stage 1 Capability V1 tokens do not contain all these bindings. They may gate the initial import-free isolation slice, but must never authorize real host side effects. Capability V2 is necessary but not sufficient before effectful host interfaces are enabled: durable Authority Store consumption, verified approval evidence where required, crash-safe evidence ordering, local artifact admission, and reviewed host interfaces are also mandatory. Approval-required requests are issued only with verified RFC 0003 signed approval evidence; without it they fail closed, and self-supplied or unexpected evidence is rejected.
 
 ## Invocation and Cache TOCTOU Rules
 
@@ -294,7 +294,7 @@ Stage 1 initially provides neither network nor filesystem interfaces.
 
 Future filesystem access uses virtual grant handles rooted by the host, rejects symlink and traversal escape, and exposes only specific read or output capabilities. Future network access uses an egress broker that revalidates resolved IPs, redirects, TLS identity, data classification, and disclosure records on every request.
 
-Until those brokers exist, manifests requesting filesystem or network access are rejected.
+Until those brokers exist, manifests requesting filesystem or network access are rejected. As a first host-mediated effect, the `sovereign-effects` crate provides an owner-controlled local outbox: the trusted host — never guest code — writes an approved document to a rooted, single-component, atomically-written file after the full authorization chain has succeeded. It performs no network effect, refuses Red data and symlink/traversal escape, and is the reference shape for the Phase D "one local reference tool with opaque grants".
 
 Red data can never enter a network grant. Amber disclosure requires minimization, preview, and evidence. Personal data is never written to a public blockchain.
 
@@ -304,7 +304,7 @@ The runtime uses a durable Authority Store. Validation and reservation/consumpti
 
 An unavailable Authority Store denies execution. Process-local counters are not sufficient for Capability V2.
 
-This is a target requirement, not a claim about the current branch. Until the durable Authority Store exists, V2 tokens are restricted to pure computation with no host effects, and restart-safe or multi-process replay resistance is not claimed.
+The durable Authority Store now exists (`sovereign-authority`): consumption of tokens, approvals, and idempotency keys is a crash-safe atomic filesystem claim shared across processes, and an unavailable or corrupt store denies execution. Validators without an attached store remain process-local, and V2 tokens stay restricted to pure computation until crash-safe audit ordering and reviewed host interfaces also exist.
 
 Production time comes from a trusted runtime clock. An untrusted caller cannot provide the validation timestamp.
 
@@ -322,6 +322,8 @@ ExecutionRequested (hashes only)
 ```
 
 Each external host effect has its own durable intent before the effect. If intent evidence cannot be persisted, execution is denied. If the external effect may have occurred but result evidence cannot be persisted, the outcome is `Indeterminate` and automatic retry is forbidden.
+
+The `sovereign-execution` crate implements this ordering for the verified executor: a per-execution append-only journal records intent (hashes only) and flushes it before the capability is consumed, records `ExecutionStarted` after consumption, and records a terminal `Completed`/`Failed` verdict after the guest returns. A crash between intent and terminal record recovers as `Indeterminate`, and recovery only reports state — it never re-executes. This journal is lifecycle evidence for the pure-compute path; migrating the signed audit ledger to the COSE audit role and binding host-effect intent to it remain Phase C work.
 
 Evidence includes execution and idempotency IDs, policy/token/approval IDs, artifact and invocation digests, runtime configuration digest, resource-use metrics, host effects, result hash, and stable failure codes.
 
@@ -362,7 +364,7 @@ Completion requires genuine malicious fixtures covering:
 - trap and timeout evidence;
 - V1-to-V2, worker-to-in-process, component-to-core, and high-risk-to-Wasm backend downgrade attempts.
 
-Current tests cover the Phase A Wasm ceilings plus the implemented foundation's role separation, trust state, publisher envelope, strict/duplicate fields, artifact/manifest/input/resource substitution, immutable snapshots, canonical key-order equivalence, Capability V1/V2 separation, exact allowlists, same-process replay/idempotency, approval fail-closed behavior, Core-Wasm downgrade rejection, and guest-failure consumption. Cache poisoning, restart/cross-process replay, durable audit-intent ordering, local admission-record recovery, Component/WIT behavior, and effectful host interfaces remain completion-gate work.
+Current tests cover the Phase A Wasm ceilings plus the implemented foundation's role separation, trust state, publisher envelope, strict/duplicate fields, artifact/manifest/input/resource substitution, immutable snapshots, canonical key-order equivalence, Capability V1/V2 separation, exact allowlists, same-process replay/idempotency, approval fail-closed behavior, Core-Wasm downgrade rejection, and guest-failure consumption. Admission-store tests cover on-disk component and manifest substitution, record tampering and cross-role signature reuse, untrusted/revoked/expired admission keys, trusted-key forged-field claims, poisoned content-addressed entries, duplicate admission, orphan temporary files, and symlinked entries. Executor consumption of admitted artifacts, cache poisoning, restart/cross-process replay, durable audit-intent ordering, Component/WIT behavior, and effectful host interfaces remain completion-gate work.
 
 ## Implementation Phases
 

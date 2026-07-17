@@ -36,7 +36,8 @@ sovereign-cli
 ├── contracts
 ├── identity
 ├── artifact
-│   └── publisher COSE manifest → VerifiedArtifact → PreparedInvocation
+│   ├── publisher COSE manifest → VerifiedArtifact → PreparedInvocation
+│   └── content-addressed store + signed admission record → AdmittedArtifact
 ├── policy
 ├── capability
 │   ├── Capability V1 (legacy Phase A compatibility)
@@ -52,7 +53,7 @@ sovereign-adversarial-tests
 
 Stage 1 currently provides prototypes for role-separated signing and trust stores, deterministic policy decisions, scoped and expiring capability tokens, encrypted local storage, a signed append-only audit ledger, and capability-gated sandbox execution. The Phase B foundation verifies a publisher-signed manifest, snapshots the exact artifact bytes, validates strict input and resource grants, prepares canonical invocation commitments, and binds them into Capability V2 before the verified executor starts. Both Wasmtime paths permit pure computation only, apply fuel, epoch, memory, table, and instance limits, and expose no host imports or WASI.
 
-`VerifiedArtifact` proves publisher provenance and byte identity; it is not the target locally signed `AdmittedArtifact`. The current sandbox is not a production plugin boundary: there is no local admission record or content-addressed artifact store, compilation remains in-process, replay accounting is process-local, the core-Wasm ABI does not receive canonical input, the mechanical `sandbox-check` uses an ephemeral issuer, and no guest can invoke an audited external side effect. The Founder Command Center, Sovereign Enterprise Graph, Crew Orchestrator, Model Mesh, Domain Packs, Recovery Mesh, durable authorization, and production host interfaces are not implemented yet. See [ROADMAP.md](ROADMAP.md) and [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
+`VerifiedArtifact` proves publisher provenance and byte identity. The artifact crate's `ArtifactStore` now separately implements the local admission transaction: verified bytes are persisted in an owner-controlled content-addressed store, and a record signed by the local `artifact-admission` role binds the component digest, manifest digest, risk class, backend, ABI, empty host capabilities, and installation state into an `AdmittedArtifact`. Loading re-derives every digest from the stored bytes and fails closed; filenames are never evidence. The current sandbox is still not a production plugin boundary: the verified executor does not yet require the admitted handle, compilation remains in-process, replay accounting is process-local, the core-Wasm ABI does not receive canonical input, the mechanical `sandbox-check` uses an ephemeral issuer, and no guest can invoke an audited external side effect. The Founder Command Center, Sovereign Enterprise Graph, Crew Orchestrator, Model Mesh, Domain Packs, Recovery Mesh, durable authorization, and production host interfaces are not implemented yet. See [ROADMAP.md](ROADMAP.md) and [RFC 0002](rfcs/0002-wasm-sandbox-and-plugin-capabilities.md).
 
 The remaining sections describe the target architecture unless they explicitly state a current Stage 1 capability.
 

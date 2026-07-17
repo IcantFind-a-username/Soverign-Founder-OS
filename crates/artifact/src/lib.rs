@@ -6,11 +6,13 @@
 //! publisher-verified; a [`PreparedInvocation`] owns canonical RFC 8785 input
 //! and only exposes resource commitments required by capability validation.
 //!
-//! This foundation does not create a locally signed admission record or
-//! persist artifacts in a content-addressed store. Those are separate trust
-//! transitions that must be added before a publisher-verified artifact can be
-//! promoted to a locally admitted artifact.
+//! The [`ArtifactStore`] adds the next trust transition: a locally signed
+//! admission record and a content-addressed store that promote a
+//! publisher-verified artifact to an [`AdmittedArtifact`]. The verified
+//! executor does not yet require the admitted handle; that wiring is a
+//! separate slice.
 
+mod admission;
 mod digest;
 mod error;
 mod invocation;
@@ -18,6 +20,10 @@ mod manifest;
 mod schema;
 mod selector;
 
+pub use admission::{
+    AdmissionRecordClaimsV1, AdmittedArtifact, ArtifactStore, InstallationState,
+    ADMISSION_RECORD_TYPE, ADMISSION_RECORD_VERSION, HARD_MAX_SIGNED_ADMISSION_BYTES,
+};
 pub use digest::{Digest, DigestError};
 pub use error::ArtifactError;
 pub use invocation::{PreparedInvocation, RawResourceGrant};

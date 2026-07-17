@@ -1,0 +1,13 @@
+[package]
+name = "sovereign-model"
+description = "Model gateway: multi-provider routing, health, failover, and disclosure records"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+sovereign-contracts = { workspace = true }
+thiserror = { workspace = true }

@@ -94,4 +94,42 @@ pub enum ArtifactError {
     InputDigestMismatch,
     #[error("resource bindings digest does not match the authorized claim")]
     ResourceBindingsDigestMismatch,
+    #[error("artifact store I/O failed: {0}")]
+    AdmissionStoreIo(String),
+    #[error("artifact store entry is not a regular file")]
+    StoredEntryNotRegularFile,
+    #[error("stored component bytes do not match the admitted digest: expected {expected}, got {actual}")]
+    StoredComponentCorrupted { expected: Digest, actual: Digest },
+    #[error("stored manifest bytes do not match the admitted digest")]
+    StoredManifestCorrupted,
+    #[error("an admission record already exists for this manifest")]
+    AdmissionRecordExists,
+    #[error("no admission record exists for this manifest")]
+    AdmissionRecordNotFound,
+    #[error("signed admission record exceeds the protocol size limit")]
+    AdmissionRecordTooLarge,
+    #[error("failed to canonicalize or sign the admission record")]
+    AdmissionSigningFailed,
+    #[error("admission record JSON is invalid: {0}")]
+    InvalidAdmissionRecord(String),
+    #[error("admission record payload is not canonical RFC 8785 JSON")]
+    NonCanonicalAdmissionRecord,
+    #[error("admission record does not match the requested artifact: {0}")]
+    AdmissionRecordMismatch(&'static str),
+    #[error("admission signing key is not trusted")]
+    UnknownAdmissionKey,
+    #[error("admission issuer does not match the trusted local authority")]
+    AdmissionIssuerMismatch,
+    #[error("admission signing key is revoked")]
+    AdmissionKeyRevoked,
+    #[error("admission signing key is not yet valid")]
+    AdmissionKeyNotYetValid,
+    #[error("admission signing key is expired")]
+    AdmissionKeyExpired,
+    #[error("admission record signature is invalid")]
+    InvalidAdmissionSignature,
+    #[error("admission record envelope is malformed or non-canonical")]
+    InvalidAdmissionEnvelope,
+    #[error("admission record verification failed")]
+    AdmissionVerificationFailed,
 }
