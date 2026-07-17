@@ -24,6 +24,7 @@ sovereign-model = { workspace = true }
 sovereign-policy = { workspace = true }
 sovereign-sandbox = { workspace = true }
 sovereign-vault = { workspace = true }
+sovereign-workflow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }

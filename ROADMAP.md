@@ -87,16 +87,16 @@ Sovereign Runtime secure kernel
 
 ---
 
-### Stage 3: Workflow Recovery
+### Stage 3: Workflow Recovery — Minimal foundation
 
 **Deliverables:**
-- Workflow checkpoints
-- Idempotency keys
-- Event replay
-- Encrypted backup targets
-- Node promotion and failover
+- [x] Durable workflow checkpoints (`crates/workflow`, crash-safe atomic rewrite)
+- [x] Deterministic per-step idempotency keys (UUID v5)
+- [x] Step replay: completed steps are never re-executed on resume
+- [ ] Encrypted backup targets
+- [ ] Multi-machine node promotion and failover (replication, leases)
 
-**Exit criteria:** Killing the primary process allows another node to recover from the last valid event.
+**Exit criteria:** Killing the primary process allows another node to recover from the last valid step. *(Demonstrated: `sovereign workflow-demo`; "another node" is another runner over the same durable directory.)*
 
 ---
 

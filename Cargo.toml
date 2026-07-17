@@ -12,6 +12,7 @@ members = [
     "crates/policy",
     "crates/capability",
     "crates/vault",
+    "crates/workflow",
     "crates/sandbox",
     "apps/cli",
     "tests/adversarial",
@@ -36,6 +37,7 @@ sovereign-audit-ledger = { path = "crates/audit-ledger" }
 sovereign-policy = { path = "crates/policy" }
 sovereign-capability = { path = "crates/capability" }
 sovereign-vault = { path = "crates/vault" }
+sovereign-workflow = { path = "crates/workflow" }
 sovereign-sandbox = { path = "crates/sandbox" }
 
 serde = { version = "1", features = ["derive"] }

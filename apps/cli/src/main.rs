@@ -53,6 +53,8 @@ enum Commands {
     },
     /// Demonstrate model-gateway health-aware failover and the Red-data guard
     ModelCheck,
+    /// Demonstrate durable workflow checkpoints resuming across a crash
+    WorkflowDemo,
 }
 
 fn data_dir() -> PathBuf {
@@ -70,7 +72,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Status => cmd_status()?,
         Commands::Ui { port, no_open } => ui::run(port, data_dir(), !no_open)?,
         Commands::ModelCheck => cmd_model_check(),
+        Commands::WorkflowDemo => cmd_workflow_demo()?,
     }
+    Ok(())
+}
+
+fn cmd_workflow_demo() -> Result<(), Box<dyn std::error::Error>> {
+    use sovereign_workflow::{StepContext, WorkflowRunner, WorkflowStep};
+
+    struct NamedStep {
+        name: &'static str,
+        crash: bool,
+    }
+    impl WorkflowStep for NamedStep {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn run(&self, context: &StepContext<'_>) -> Result<Vec<u8>, String> {
+            if self.crash {
+                println!("    · step `{}` interrupted (simulated crash)", self.name);
+                return Err("process killed mid-step".into());
+            }
+            println!("    · executing step `{}`", self.name);
+            Ok(format!("{}:{}", context.workflow_id, self.name).into_bytes())
+        }
+    }
+    fn step(name: &'static str, crash: bool) -> Box<dyn WorkflowStep> {
+        Box::new(NamedStep { name, crash })
+    }
+
+    let dir = data_dir().join("workflow-demo");
+    let _ = std::fs::remove_dir_all(&dir);
+    let names = [
+        "generate_offer",
+        "create_invoice",
+        "build_plan",
+        "security_checklist",
+    ];
+
+    println!("Durable workflow · crash-safe checkpoints + idempotent resume\n");
+    println!("== First process: crashes during step 3 ==");
+    let mut first: Vec<Box<dyn WorkflowStep>> = names.iter().map(|n| step(n, false)).collect();
+    first[2] = step(names[2], true);
+    let crashed = WorkflowRunner::open(&dir, "founder-onboarding")?.run(&first);
+    println!(
+        "  first run ended with: {}",
+        match &crashed {
+            Ok(_) => "completed".to_string(),
+            Err(error) => error.to_string(),
+        }
+    );
+
+    println!("\n== Second process (another node): resumes the full workflow ==");
+    let full: Vec<Box<dyn WorkflowStep>> = names.iter().map(|n| step(n, false)).collect();
+    let summary = WorkflowRunner::open(&dir, "founder-onboarding")?.run(&full)?;
+    println!(
+        "\n  steps executed on resume: {:?} (steps 0,1 replayed from receipts, not re-run)",
+        summary.executed_now
+    );
+    println!("  total receipts: {}", summary.receipts.len());
+    let _ = std::fs::remove_dir_all(&dir);
+    println!("\nKill the process mid-workflow. Another node resumes from the last valid step.");
     Ok(())
 }
 

@@ -153,6 +153,7 @@ crates/
   execution/      crash-safe execution journal (durable intent, Indeterminate recovery)
   effects/        audited local outbox file-write broker (first host effect)
   model/          model gateway: routing, health, failover, disclosure records
+  workflow/       durable checkpointed workflows with idempotent crash resume
   policy/         deterministic permission engine
   capability/     legacy V1 and exact-bound Capability V2 tokens
   vault/          local encrypted storage
@@ -168,7 +169,9 @@ cargo test --workspace
 cargo run -p sovereign-cli -- init
 cargo run -p sovereign-cli -- sandbox-check
 cargo run -p sovereign-cli -- demo          # add --fast to skip the pauses
-cargo run -p sovereign-cli -- ui            # local Security Center at http://127.0.0.1:7787
+cargo run -p sovereign-cli -- ui            # local app at http://127.0.0.1:7787
+cargo run -p sovereign-cli -- model-check   # model failover + Red-data guard
+cargo run -p sovereign-cli -- workflow-demo # crash-safe workflow resume
 ```
 
 `demo` is a story-driven walkthrough of the secure kernel: it creates your
