@@ -166,6 +166,7 @@
         <div><label data-i18n="ws_customer_name"></label><input type="text" id="c-name" maxlength="200"></div>
         <button class="primary" id="c-add" data-i18n="ws_add_customer"></button>
       </div>
+      <div><label data-i18n="ws_customer_email"></label><input type="text" id="c-email" maxlength="254" placeholder="name@example.com"></div>
       <div><label data-i18n="ws_customer_notes"></label><input type="text" id="c-notes" maxlength="500"></div>
     </div>
     <div class="panel" style="margin-top:10px"><div id="customers" class="empty" data-i18n="ws_no_customers"></div></div>
@@ -284,9 +285,9 @@ const STRINGS = {
     ws_company_name: "Company name", ws_service_desc: "What service do you sell?",
     ws_save: "Save", saved: "saved ✓",
     ws_customers_title: "Customers",
-    ws_customer_name: "Customer name", ws_customer_notes: "Notes (optional)", ws_add_customer: "Add customer",
+    ws_customer_name: "Customer name", ws_customer_email: "Email (optional)", ws_customer_notes: "Notes (optional)", ws_add_customer: "Add customer",
     ws_no_customers: "No customers yet.",
-    th_customer: "Customer", th_notes: "Notes", th_added: "Added",
+    th_customer: "Customer", th_email: "Email", th_notes: "Notes", th_added: "Added",
     ws_documents_title: "Documents",
     ws_for_customer: "For customer", ws_amount: "Amount",
     ws_gen_offer: "Generate offer draft", ws_gen_invoice: "Generate invoice draft",
@@ -375,9 +376,9 @@ const STRINGS = {
     ws_company_name: "公司名称", ws_service_desc: "你提供什么服务?",
     ws_save: "保存", saved: "已保存 ✓",
     ws_customers_title: "客户",
-    ws_customer_name: "客户名称", ws_customer_notes: "备注(可选)", ws_add_customer: "添加客户",
+    ws_customer_name: "客户名称", ws_customer_email: "邮箱(可选)", ws_customer_notes: "备注(可选)", ws_add_customer: "添加客户",
     ws_no_customers: "暂无客户。",
-    th_customer: "客户", th_notes: "备注", th_added: "添加时间",
+    th_customer: "客户", th_email: "邮箱", th_notes: "备注", th_added: "添加时间",
     ws_documents_title: "文档",
     ws_for_customer: "目标客户", ws_amount: "金额",
     ws_gen_offer: "生成报价单草稿", ws_gen_invoice: "生成发票草稿",
@@ -522,8 +523,8 @@ function renderWorkspace() {
     customers.replaceChildren(el("div", "empty", t("ws_no_customers")));
   } else {
     customers.replaceChildren(table(
-      [t("th_customer"), t("th_notes"), t("th_added")],
-      ws.customers.map(c => [c.name, c.notes, fmtTime(c.created_at)])));
+      [t("th_customer"), t("th_email"), t("th_notes"), t("th_added")],
+      ws.customers.map(c => [c.name, c.email || "—", c.notes, fmtTime(c.created_at)])));
   }
 
   const select = $("d-customer");
@@ -606,8 +607,8 @@ async function saveVenture() {
 }
 
 async function addCustomer() {
-  const result = await api("/api/workspace/customer", { name: $("c-name").value, notes: $("c-notes").value });
-  if (result.ok) { $("c-name").value = ""; $("c-notes").value = ""; ws = result.workspace; renderWorkspace(); loadState(); }
+  const result = await api("/api/workspace/customer", { name: $("c-name").value, email: $("c-email").value, notes: $("c-notes").value });
+  if (result.ok) { $("c-name").value = ""; $("c-email").value = ""; $("c-notes").value = ""; ws = result.workspace; renderWorkspace(); loadState(); }
   else $("d-status").textContent = result.error;
 }
 

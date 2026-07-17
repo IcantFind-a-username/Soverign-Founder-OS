@@ -97,13 +97,36 @@ impl OutboxBroker {
         data_class: EffectDataClass,
         contents: &[u8],
     ) -> Result<OutboxReceipt, EffectError> {
+        self.write_with_extension(key, "txt", data_class, contents)
+    }
+
+    /// Write a composed RFC 5322 message to `<outbox>/<key>.eml` atomically.
+    /// Identical safety posture to [`write_document`]; only the extension
+    /// differs, so a mail client recognizes the file. The message is composed
+    /// locally and never transmitted — sending stays the founder's own action.
+    pub fn write_message(
+        &self,
+        key: &str,
+        data_class: EffectDataClass,
+        contents: &[u8],
+    ) -> Result<OutboxReceipt, EffectError> {
+        self.write_with_extension(key, "eml", data_class, contents)
+    }
+
+    fn write_with_extension(
+        &self,
+        key: &str,
+        extension: &str,
+        data_class: EffectDataClass,
+        contents: &[u8],
+    ) -> Result<OutboxReceipt, EffectError> {
         if data_class == EffectDataClass::Red {
             return Err(EffectError::RedDataForbidden);
         }
         if contents.len() > MAX_OUTBOX_BYTES {
             return Err(EffectError::ContentTooLarge);
         }
-        let file_name = safe_file_name(key)?;
+        let file_name = safe_file_name(key, extension)?;
         let final_path = self.root.join(&file_name);
 
         // Refuse to write through an existing symlink or non-regular file.
@@ -127,10 +150,11 @@ impl OutboxBroker {
     }
 }
 
-/// Derive a safe `.txt` filename from an opaque key. Only ASCII alphanumerics,
-/// `-`, and `_` survive; anything else is rejected. The result is guaranteed
-/// to be a single path component.
-fn safe_file_name(key: &str) -> Result<String, EffectError> {
+/// Derive a safe `<key>.<extension>` filename from an opaque key. Only ASCII
+/// alphanumerics, `-`, and `_` survive in the key; the extension must be a
+/// short lowercase-ASCII tag. The result is guaranteed to be a single path
+/// component.
+fn safe_file_name(key: &str, extension: &str) -> Result<String, EffectError> {
     if key.is_empty() || key.len() > 128 {
         return Err(EffectError::UnsafeName);
     }
@@ -140,7 +164,15 @@ fn safe_file_name(key: &str) -> Result<String, EffectError> {
     {
         return Err(EffectError::UnsafeName);
     }
-    let name = format!("{key}.txt");
+    // The extension is host-supplied (never user-supplied), but validate it
+    // anyway so no call site can smuggle a dot or separator into the name.
+    if extension.is_empty()
+        || extension.len() > 8
+        || !extension.bytes().all(|byte| byte.is_ascii_lowercase())
+    {
+        return Err(EffectError::UnsafeName);
+    }
+    let name = format!("{key}.{extension}");
     // Defense in depth: the derived name must still be exactly one normal
     // component, matching the vault's traversal guard.
     let mut components = Path::new(&name).components();
@@ -224,6 +256,29 @@ mod tests {
         let written =
             std::fs::read(dir.path().join("outbox").join("invoice-2026-001.txt")).unwrap();
         assert_eq!(written, b"INVOICE DRAFT");
+    }
+
+    #[test]
+    fn writes_message_with_eml_extension() {
+        let dir = tempdir().unwrap();
+        let broker = OutboxBroker::open(dir.path().join("outbox")).unwrap();
+        let message = b"From: a\r\nTo: b\r\nSubject: hi\r\n\r\nbody";
+        let receipt = broker
+            .write_message("doc-42", EffectDataClass::Amber, message)
+            .unwrap();
+        assert_eq!(receipt.relative_path, "doc-42.eml");
+        let written = std::fs::read(dir.path().join("outbox").join("doc-42.eml")).unwrap();
+        assert_eq!(written, message);
+    }
+
+    #[test]
+    fn message_write_still_refuses_red_data() {
+        let dir = tempdir().unwrap();
+        let broker = OutboxBroker::open(dir.path().join("outbox")).unwrap();
+        assert_eq!(
+            broker.write_message("secret", EffectDataClass::Red, b"pii"),
+            Err(EffectError::RedDataForbidden)
+        );
     }
 
     #[test]
