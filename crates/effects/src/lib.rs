@@ -61,6 +61,8 @@ pub enum EffectError {
     ContentTooLarge,
     #[error("outbox target already exists and is not a regular file")]
     UnsafeExistingTarget,
+    #[error("outbox file not found")]
+    NotFound,
     #[error("outbox effect I/O failed: {0}")]
     Io(String),
 }
@@ -143,6 +145,34 @@ impl OutboxBroker {
             content_sha256_hex: hex::encode(Sha256::digest(contents)),
             bytes: contents.len(),
         })
+    }
+
+    /// Delete a file previously written to the outbox, addressed by the exact
+    /// relative path from its receipt. The name is re-validated as a single
+    /// safe component, and only a regular file is removed — never a symlink or
+    /// directory. A missing file is reported so the caller can distinguish
+    /// "revoked now" from "already gone".
+    pub fn revoke(&self, relative_path: &str) -> Result<(), EffectError> {
+        // Re-derive the name from key+extension so a caller cannot pass an
+        // arbitrary path: split the receipt's `<key>.<ext>` and re-validate.
+        let (key, extension) = relative_path
+            .rsplit_once('.')
+            .ok_or(EffectError::UnsafeName)?;
+        let file_name = safe_file_name(key, extension)?;
+        if file_name != relative_path {
+            return Err(EffectError::UnsafeName);
+        }
+        let target = self.root.join(&file_name);
+        match std::fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_file() => {
+                std::fs::remove_file(&target).map_err(io)
+            }
+            Ok(_) => Err(EffectError::UnsafeExistingTarget),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Err(EffectError::NotFound)
+            }
+            Err(error) => Err(io(error)),
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -279,6 +309,35 @@ mod tests {
             broker.write_message("secret", EffectDataClass::Red, b"pii"),
             Err(EffectError::RedDataForbidden)
         );
+    }
+
+    #[test]
+    fn revoke_deletes_the_file_and_reports_missing() {
+        let dir = tempdir().unwrap();
+        let broker = OutboxBroker::open(dir.path().join("outbox")).unwrap();
+        let receipt = broker
+            .write_message("doc-9", EffectDataClass::Amber, b"hello")
+            .unwrap();
+        let path = dir.path().join("outbox").join(&receipt.relative_path);
+        assert!(path.exists());
+
+        broker.revoke(&receipt.relative_path).unwrap();
+        assert!(!path.exists(), "revoke removes the file");
+
+        // A second revoke reports it is already gone, not a silent success.
+        assert_eq!(
+            broker.revoke(&receipt.relative_path),
+            Err(EffectError::NotFound)
+        );
+    }
+
+    #[test]
+    fn revoke_refuses_unsafe_paths() {
+        let dir = tempdir().unwrap();
+        let broker = OutboxBroker::open(dir.path().join("outbox")).unwrap();
+        for bad in ["../secret.txt", "a/b.txt", "noext", "sub/../x.eml"] {
+            assert_eq!(broker.revoke(bad), Err(EffectError::UnsafeName), "{bad}");
+        }
     }
 
     #[test]

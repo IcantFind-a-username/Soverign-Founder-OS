@@ -121,6 +121,10 @@ pub enum DocumentStatus {
     PendingApproval,
     ApprovedPendingDelivery,
     Rejected,
+    /// An approved send whose composed outbox file the owner later revoked.
+    /// The signed approval evidence remains; the local effect was undone and
+    /// the revocation is itself audited.
+    Revoked,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -780,6 +784,64 @@ impl Store {
                 )?;
             }
         }
+        Ok(workspace)
+    }
+
+    /// Revoke an approved send: delete the composed `.eml` from the local
+    /// outbox and record a signed `effect.revoked` event. This makes the
+    /// "revocable" property real — the local effect is undone and the
+    /// revocation is itself audited. The signed approval evidence is kept: it
+    /// is history, and revoking the file does not rewrite the fact that the
+    /// owner approved. Fails closed if the document is not awaiting delivery.
+    pub fn revoke_delivery(&self, document_id: Uuid) -> Result<Workspace, WorkspaceError> {
+        let mut workspace = self.load()?;
+        let document = workspace
+            .documents
+            .iter()
+            .find(|document| document.id == document_id)
+            .ok_or_else(|| WorkspaceError::NotFound("document".into()))?;
+        if document.status != DocumentStatus::ApprovedPendingDelivery {
+            return Err(WorkspaceError::Invalid(
+                "only an approved, undelivered document can be revoked".into(),
+            ));
+        }
+
+        // Locate the outbox receipt from this document's approval evidence.
+        let outbox = workspace
+            .approvals
+            .iter()
+            .filter(|approval| approval.document_id == document_id)
+            .filter_map(|approval| approval.evidence.as_ref())
+            .filter_map(|evidence| evidence.outbox.as_ref())
+            .next_back()
+            .cloned()
+            .ok_or_else(|| WorkspaceError::Invalid("no outbox effect to revoke".into()))?;
+
+        // Delete the file. "Already gone" is an acceptable end state — the goal
+        // is that the file no longer exists — but any other error fails closed.
+        let broker =
+            sovereign_effects::OutboxBroker::open(self.root.join("outbox")).map_err(kernel)?;
+        match broker.revoke(&outbox.relative_path) {
+            Ok(()) | Err(sovereign_effects::EffectError::NotFound) => {}
+            Err(error) => return Err(kernel(error)),
+        }
+
+        let document_entry = workspace
+            .documents
+            .iter_mut()
+            .find(|document| document.id == document_id)
+            .ok_or_else(|| WorkspaceError::NotFound("document".into()))?;
+        document_entry.status = DocumentStatus::Revoked;
+        self.save(&workspace)?;
+
+        self.record(
+            "effect.revoked",
+            &format!("document:{document_id}"),
+            serde_json::json!({
+                "outbox_path": outbox.relative_path,
+                "content_sha256": outbox.content_sha256,
+            }),
+        )?;
         Ok(workspace)
     }
 
@@ -1730,6 +1792,58 @@ mod tests {
         // A real recipient means no placeholder note.
         assert!(!message.contains("placeholder"));
         assert_eq!(outbox_receipt.bytes, written.len());
+    }
+
+    #[test]
+    fn revoke_delivery_deletes_outbox_and_audits() {
+        let (dir, store) = store();
+        store.set_venture("Acme", "Landing pages").unwrap();
+        let workspace = store
+            .add_customer("Dr. Tan", "dr.tan@example.com", "")
+            .unwrap();
+        let customer_id = workspace.customers[0].id;
+        let workspace = store
+            .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
+            .unwrap();
+        let document_id = workspace.documents[0].id;
+        let workspace = store.request_send(document_id).unwrap();
+        let workspace = store.decide(workspace.approvals[0].id, true).unwrap();
+        let outbox_path = workspace.approvals[0]
+            .evidence
+            .as_ref()
+            .unwrap()
+            .outbox
+            .as_ref()
+            .unwrap()
+            .relative_path
+            .clone();
+        let file = dir.path().join("outbox").join(&outbox_path);
+        assert!(file.exists());
+
+        let workspace = store.revoke_delivery(document_id).unwrap();
+        assert_eq!(workspace.documents[0].status, DocumentStatus::Revoked);
+        assert!(!file.exists(), "revoke deletes the composed .eml");
+
+        // The revocation is audited on the same signed chain, and the prior
+        // approval evidence is kept — revoking the file does not rewrite the
+        // fact that the owner approved.
+        let device = DeviceIdentity::load(&dir.path().join("device.json")).unwrap();
+        let ledger =
+            AuditLedger::load(&dir.path().join("ledger.json"), device.public_key_b64()).unwrap();
+        assert_eq!(ledger.events().last().unwrap().action, "effect.revoked");
+        ledger.verify_chain().unwrap();
+        assert!(workspace.approvals[0].evidence.is_some());
+
+        // A second revoke fails closed (no longer awaiting delivery), and an
+        // unknown document is refused.
+        assert!(matches!(
+            store.revoke_delivery(document_id),
+            Err(WorkspaceError::Invalid(_))
+        ));
+        assert!(matches!(
+            store.revoke_delivery(Uuid::new_v4()),
+            Err(WorkspaceError::NotFound(_))
+        ));
     }
 
     #[test]

@@ -207,8 +207,10 @@ tampering) — every denial is a real enforcement path, not a mock.
   local `outbox/*.eml` file (a real, audited host effect) — addressed to the
   customer's email if set, otherwise an RFC 2606 placeholder, and always marked
   "composed locally, not transmitted" — and records the signed evidence;
-  Stage 1 performs no *network* effects —
-  nothing leaves the device.
+  Stage 1 performs no *network* effects — nothing leaves the device. The effect
+  is genuinely revocable: revoking an approved send deletes the `.eml` and
+  records a signed `effect.revoked` event, while the approval evidence is kept
+  as history.
 - **Security Center** — device identity, vault entries, admitted plugins
   (verified from the content-addressed store), the signed audit chain, and a
   one-click in-memory run of the attack gauntlet.
