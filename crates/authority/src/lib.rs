@@ -386,6 +386,38 @@ mod tests {
     }
 
     #[test]
+    fn purged_idempotency_key_can_be_rebound_without_false_conflict() {
+        // An idempotency key that has expired and been purged must not haunt a
+        // later, unrelated invocation as a phantom conflict — otherwise expired
+        // keys would wedge new work forever. After purge, the same key rebinds
+        // to a different fingerprint cleanly.
+        let dir = tempdir().unwrap();
+        let store = AuthorityStore::open(dir.path()).unwrap();
+        let key = Uuid::new_v4();
+        let first = [1u8; 32];
+        let second = [2u8; 32];
+
+        store.bind_idempotency(key, &first, NOW, NOW + 10).unwrap();
+        // While live, a different fingerprint is a real conflict.
+        assert_eq!(
+            store.bind_idempotency(key, &second, NOW + 1, NOW + 10),
+            Err(AuthorityError::IdempotencyConflict)
+        );
+
+        // After expiry + purge the record is gone, and the key is free again.
+        assert_eq!(store.purge_expired(NOW + 100).unwrap(), 1);
+        assert_eq!(
+            store.bind_idempotency(key, &second, NOW + 101, NOW + 200),
+            Ok(())
+        );
+        // And it is once more a live one-use binding.
+        assert_eq!(
+            store.bind_idempotency(key, &second, NOW + 102, NOW + 200),
+            Err(AuthorityError::IdempotencyReplay)
+        );
+    }
+
+    #[test]
     fn corrupt_records_fail_closed() {
         let dir = tempdir().unwrap();
         let store = AuthorityStore::open(dir.path()).unwrap();

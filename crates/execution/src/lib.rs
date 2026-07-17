@@ -367,6 +367,50 @@ mod tests {
     }
 
     #[test]
+    fn garbage_line_before_terminal_is_skipped_and_terminal_wins() {
+        let dir = tempdir().unwrap();
+        let journal = ExecutionJournal::open(dir.path()).unwrap();
+        let guard = journal.begin(intent(41)).unwrap();
+        guard.started().unwrap();
+        drop(guard);
+        // Inject a complete-but-unparseable line, then a valid terminal after
+        // it. The garbage must be skipped, not poison the whole record.
+        let path = dir.path().join(format!("{}.jsonl", Uuid::from_u128(41)));
+        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(b"{\"record\":\"nonsense\",\"bad\":true}\n")
+            .unwrap();
+        let terminal = JournalRecord::Terminal(ExecutionOutcome::Completed {
+            result_hash_hex: "cc".repeat(32),
+        });
+        file.write_all(serde_json::to_string(&terminal).unwrap().as_bytes())
+            .unwrap();
+        file.write_all(b"\n").unwrap();
+        drop(file);
+
+        let recovered = ExecutionJournal::open(dir.path())
+            .unwrap()
+            .recover()
+            .unwrap();
+        assert_eq!(
+            recovered[0].state,
+            ExecutionState::Completed {
+                result_hash_hex: "cc".repeat(32)
+            }
+        );
+    }
+
+    #[test]
+    fn non_utf8_journal_fails_closed() {
+        let dir = tempdir().unwrap();
+        let journal = ExecutionJournal::open(dir.path()).unwrap();
+        // A journal file that is not valid UTF-8 is corruption, not an empty
+        // recovery: recover must surface an error rather than silently drop it.
+        std::fs::write(dir.path().join("corrupt.jsonl"), [0xff, 0xfe, 0x00, 0x01]).unwrap();
+        let result = journal.recover();
+        assert!(matches!(result, Err(JournalError::CorruptRecord)));
+    }
+
+    #[test]
     fn finished_guard_records_terminal_and_reopen_agrees() {
         let dir = tempdir().unwrap();
         let journal = ExecutionJournal::open(dir.path()).unwrap();
