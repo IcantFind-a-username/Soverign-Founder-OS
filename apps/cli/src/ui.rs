@@ -263,6 +263,7 @@ fn workspace_post(path: &str, body: &serde_json::Value, root: &Path) -> serde_js
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false),
             ),
+            "/api/workspace/revoke" => store.revoke_delivery(uuid_field(body, "document_id")?),
             _ => Err(workspace::WorkspaceError::NotFound("route".into())),
         }
     })();
