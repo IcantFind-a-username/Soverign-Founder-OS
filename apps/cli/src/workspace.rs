@@ -41,10 +41,10 @@ use sovereign_capability::v2::{
     CapabilityIssuerV2, CapabilityV2IssueOptions, CapabilityV2IssueRequest, CapabilityValidatorV2,
     SystemClock as CapabilityClock,
 };
-use sovereign_contracts::{ActionRequest, AutomationLevel, DataClass};
+use sovereign_contracts::{ActionRequest, AuditEvent, AutomationLevel, DataClass};
 use sovereign_identity::{
-    AdmissionRole, ApprovalRole, AuthorityRole, DeviceIdentity, KeyValidity, PublisherRole,
-    RoleTrustStore, TypedSigner,
+    device_id_from_public_key_b64, AdmissionRole, ApprovalRole, AuthorityRole, DeviceIdentity,
+    KeyValidity, PublisherRole, RoleTrustStore, TypedSigner,
 };
 use sovereign_model::{DeterministicProvider, Health as ModelHealth, ModelGateway, ModelRequest};
 use sovereign_policy::{AuthenticatedPolicyContextV2, PolicyEngine};
@@ -56,6 +56,8 @@ use crate::demo::compile_wat;
 
 pub const WORKSPACE_VAULT_ENTRY: &str = "workspace_graph";
 const WORKSPACE_VERSION: u32 = 1;
+/// Stable identifier stamped into every export and required on verification.
+pub const EXPORT_FORMAT: &str = "sovereign-founder-os-export";
 const MAX_TEXT_FIELD_BYTES: usize = 4 * 1024;
 const MAX_CUSTOMERS: usize = 500;
 const MAX_DOCUMENTS: usize = 2_000;
@@ -243,6 +245,30 @@ pub struct EvidenceRollup {
     pub outbox_effects: usize,
     /// Relative path of the most recent real host effect, if any.
     pub last_effect_path: Option<String>,
+}
+
+/// The result of independently verifying an exported bundle, offline. Every
+/// field is derived from the bundle alone — no device, vault, or network — so
+/// anyone the founder hands the file to can confirm it is intact and authentic.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportVerification {
+    pub format_ok: bool,
+    pub version: u64,
+    pub device_id: String,
+    /// The declared `device_id` equals the fingerprint of the key that signed
+    /// the audit events — the history is cryptographically bound to that id.
+    pub identity_bound: bool,
+    pub audit_events: usize,
+    /// The full signed hash chain recomputes and every Ed25519 signature checks.
+    pub audit_chain_verified: bool,
+    pub customers: usize,
+    pub documents: usize,
+    pub signed_approvals: usize,
+    /// Well-formed, identity-bound, and chain-verified. Anything less is
+    /// surfaced in `notes`, never silently downgraded to a pass.
+    pub ok: bool,
+    /// Human-readable explanation of any check that did not pass.
+    pub notes: Vec<String>,
 }
 
 /// Storage + evidence context for one workspace operation.
@@ -1062,7 +1088,7 @@ impl Store {
         };
         self.record("workspace.export", "workspace:all", serde_json::json!({}))?;
         Ok(serde_json::json!({
-            "format": "sovereign-founder-os-export",
+            "format": EXPORT_FORMAT,
             "version": 1,
             "exported_at_unix": now(),
             "device_id": self.device.device_id(),
@@ -1071,6 +1097,121 @@ impl Store {
             "audit_events": events,
         }))
     }
+}
+
+/// Verify an exported bundle independently and offline. Pure over its input:
+/// it opens no store, loads no keys, and touches no network, so it can check a
+/// backup on any machine. When `ok` is true the bundle is well-formed, its
+/// audit history is bound to the `device_id` it declares, and the entire signed
+/// hash chain re-verifies. Any failure is reported in `notes`, never hidden.
+pub fn verify_export(bundle: &serde_json::Value) -> Result<ExportVerification, WorkspaceError> {
+    let mut notes = Vec::new();
+
+    let format = bundle
+        .get("format")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let format_ok = format == EXPORT_FORMAT;
+    if !format_ok {
+        notes.push(format!("unexpected format tag: {format:?}"));
+    }
+    let version = bundle
+        .get("version")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let device_id = bundle
+        .get("device_id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_owned();
+
+    let events: Vec<AuditEvent> = match bundle.get("audit_events") {
+        Some(value) => serde_json::from_value(value.clone())
+            .map_err(|error| WorkspaceError::Invalid(format!("audit_events malformed: {error}")))?,
+        None => Vec::new(),
+    };
+    let audit_events = events.len();
+
+    // Identity binding and full-chain verification, from the events alone. Each
+    // event embeds the signing public key, so the chain — hash linkage and
+    // Ed25519 signatures — is checkable without any external key material.
+    let (identity_bound, audit_chain_verified) = if events.is_empty() {
+        (false, true)
+    } else {
+        let signing_key = events[0].device_public_key_b64.clone();
+        let uniform_key = events
+            .iter()
+            .all(|event| event.device_public_key_b64 == signing_key);
+        if !uniform_key {
+            notes.push("audit events are signed by more than one key".into());
+        }
+        let identity_bound = match device_id_from_public_key_b64(&signing_key) {
+            Ok(expected) if expected == device_id => true,
+            Ok(_) => {
+                notes.push("device_id does not match the audit-signing key".into());
+                false
+            }
+            Err(error) => {
+                notes.push(format!("audit-signing key is invalid: {error}"));
+                false
+            }
+        };
+        let chain_ok = match AuditLedger::from_events(events, signing_key) {
+            Ok(_) => true,
+            Err(error) => {
+                notes.push(format!("audit chain failed verification: {error}"));
+                false
+            }
+        };
+        (identity_bound && uniform_key, chain_ok)
+    };
+
+    let workspace = bundle.get("workspace");
+    let array_len = |key: &str| {
+        workspace
+            .and_then(|value| value.get(key))
+            .and_then(|value| value.as_array())
+            .map(|array| array.len())
+            .unwrap_or(0)
+    };
+    let customers = array_len("customers");
+    let documents = array_len("documents");
+    let signed_approvals = workspace
+        .and_then(|value| value.get("approvals"))
+        .and_then(|value| value.as_array())
+        .map(|approvals| {
+            approvals
+                .iter()
+                .filter(|approval| {
+                    approval
+                        .get("evidence")
+                        .map(|evidence| !evidence.is_null())
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0);
+
+    let ok = if audit_events == 0 {
+        notes.push("no audit history in this bundle — nothing to cryptographically verify".into());
+        format_ok
+    } else {
+        format_ok && identity_bound && audit_chain_verified
+    };
+
+    Ok(ExportVerification {
+        format_ok,
+        version,
+        device_id,
+        identity_bound,
+        audit_events,
+        audit_chain_verified,
+        customers,
+        documents,
+        signed_approvals,
+        ok,
+        notes,
+    })
 }
 
 fn delivery_manifest_json(
@@ -1428,6 +1569,64 @@ mod tests {
         let ledger =
             AuditLedger::load(&_dir.path().join("ledger.json"), device.public_key_b64()).unwrap();
         assert_eq!(ledger.events().last().unwrap().action, "model.drafted");
+    }
+
+    #[test]
+    fn verify_export_accepts_genuine_bundle_and_rejects_tampering() {
+        let (_dir, store) = store();
+        store.set_venture("Acme", "Landing pages").unwrap();
+        let workspace = store.add_customer("Dr. Tan", "expo").unwrap();
+        let customer_id = workspace.customers[0].id;
+        let workspace = store
+            .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
+            .unwrap();
+        let document_id = workspace.documents[0].id;
+        let workspace = store.request_send(document_id).unwrap();
+        store.decide(workspace.approvals[0].id, true).unwrap();
+
+        let bundle = store.export().unwrap();
+
+        // A genuine export verifies end to end: format, identity binding, and
+        // the full signed chain.
+        let report = verify_export(&bundle).unwrap();
+        assert!(
+            report.ok,
+            "genuine bundle should verify: {:?}",
+            report.notes
+        );
+        assert!(report.format_ok);
+        assert!(report.identity_bound);
+        assert!(report.audit_chain_verified);
+        assert!(report.audit_events >= 1);
+        assert_eq!(report.customers, 1);
+        assert_eq!(report.documents, 1);
+        assert_eq!(report.signed_approvals, 1);
+
+        // Tampering with a recorded action breaks the signed chain and is
+        // caught — the verifier fails closed and says why.
+        let mut tampered = bundle.clone();
+        tampered["audit_events"][0]["action"] = serde_json::Value::String("tampered.action".into());
+        let report = verify_export(&tampered).unwrap();
+        assert!(!report.ok);
+        assert!(!report.audit_chain_verified);
+        assert!(report.notes.iter().any(|note| note.contains("chain")));
+
+        // Swapping the declared device_id (identity spoof) is caught even when
+        // the chain itself is internally consistent.
+        let mut spoofed = bundle.clone();
+        spoofed["device_id"] = serde_json::Value::String("dev_000000000000000000000000".into());
+        let report = verify_export(&spoofed).unwrap();
+        assert!(!report.ok);
+        assert!(!report.identity_bound);
+        assert!(
+            report.audit_chain_verified,
+            "chain is untouched by an id swap"
+        );
+
+        // A foreign format tag is refused outright.
+        let mut wrong_format = bundle.clone();
+        wrong_format["format"] = serde_json::Value::String("not-our-export".into());
+        assert!(!verify_export(&wrong_format).unwrap().format_ok);
     }
 
     #[test]

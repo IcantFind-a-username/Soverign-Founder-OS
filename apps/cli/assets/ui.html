@@ -203,9 +203,19 @@
   </section>
 
   <section>
-    <div class="toolbar">
-      <a href="/api/export" download><button class="ghost" data-i18n="ws_export"></button></a>
-      <span class="status-line" data-i18n="ws_export_note"></span>
+    <h2 data-i18n="ws_backup_title"></h2>
+    <div class="panel pad form-grid">
+      <div class="toolbar">
+        <a href="/api/export" download><button class="ghost" data-i18n="ws_export"></button></a>
+        <span class="status-line" data-i18n="ws_export_note"></span>
+      </div>
+      <div class="status-line" data-i18n="ws_verify_note"></div>
+      <div class="toolbar">
+        <input type="file" id="verify-file" accept="application/json,.json">
+        <button class="ghost" id="verify-btn" data-i18n="ws_verify"></button>
+        <span class="status-line" id="verify-status"></span>
+      </div>
+      <div id="verify-report" class="panel pad" hidden></div>
     </div>
   </section>
 </div>
@@ -300,6 +310,18 @@ const STRINGS = {
     ws_approve: "Approve", ws_reject: "Reject",
     ws_approval_for: "Send request for: ",
     ws_export: "Export all my data", ws_export_note: "Everything — company, customers, documents, and the signed audit chain — as one JSON file. Your data, your exit.",
+    ws_backup_title: "Backup & verify",
+    ws_verify_note: "Verify a backup file — this machine or any other. It checks the format, that the audit history is cryptographically bound to the device that signed it, and that the whole signed chain re-computes. Runs entirely offline.",
+    ws_verify: "Verify a backup file",
+    ws_verify_reading: "reading…", ws_verify_checking: "verifying…",
+    ws_verify_pick: "choose a backup .json file first",
+    ws_verify_badfile: "could not read that file as JSON",
+    ws_verify_pass: "VERIFIED", ws_verify_fail: "VERIFICATION FAILED",
+    ws_verify_row_format: "Format tag", ws_verify_row_identity: "Identity binding",
+    ws_verify_row_chain: "Signed audit chain", ws_verify_row_state: "Business state",
+    ws_verify_device: "Device", ws_verify_events: (n) => n + " events",
+    ws_verify_state: (r) => r.customers + " customers · " + r.documents + " documents · " + r.signed_approvals + " signed approvals",
+    ws_verify_pass_word: "pass", ws_verify_fail_word: "fail",
     tile_device: "Device identity", tile_events: "Audit events", tile_vault: "Vault entries", tile_plugins: "Admitted plugins",
     vault_meta: "encrypted at rest (AES-256-GCM)", plugins_meta: "owner-signed admission records",
     device_ready: "ready", device_none: "none", device_hint: "created automatically on first use",
@@ -379,6 +401,18 @@ const STRINGS = {
     ws_approve: "批准", ws_reject: "拒绝",
     ws_approval_for: "发送申请:",
     ws_export: "导出我的全部数据", ws_export_note: "公司、客户、文档与签名审计链——打包为一个 JSON 文件。数据属于你,离开也自由。",
+    ws_backup_title: "备份与验证",
+    ws_verify_note: "验证一个备份文件 —— 无论来自本机还是其他机器。它检查格式、审计历史是否在密码学上绑定到签名它的设备、以及整条签名链能否重新算出。全程离线运行。",
+    ws_verify: "验证备份文件",
+    ws_verify_reading: "读取中…", ws_verify_checking: "验证中…",
+    ws_verify_pick: "请先选择一个备份 .json 文件",
+    ws_verify_badfile: "无法将该文件解析为 JSON",
+    ws_verify_pass: "验证通过", ws_verify_fail: "验证未通过",
+    ws_verify_row_format: "格式标识", ws_verify_row_identity: "身份绑定",
+    ws_verify_row_chain: "签名审计链", ws_verify_row_state: "业务状态",
+    ws_verify_device: "设备", ws_verify_events: (n) => n + " 条事件",
+    ws_verify_state: (r) => r.customers + " 位客户 · " + r.documents + " 份文档 · " + r.signed_approvals + " 项签名批准",
+    ws_verify_pass_word: "通过", ws_verify_fail_word: "未通过",
     tile_device: "设备身份", tile_events: "审计事件", tile_vault: "保险库条目", tile_plugins: "已准入插件",
     vault_meta: "静态加密(AES-256-GCM)", plugins_meta: "所有者签名的准入记录",
     device_ready: "就绪", device_none: "未创建", device_hint: "首次使用时自动创建",
@@ -689,6 +723,61 @@ async function runGauntlet() {
   }
 }
 
+/* ─────────────── Backup verification ─────────────── */
+
+async function verifyBackup() {
+  const input = $("verify-file");
+  const status = $("verify-status");
+  const reportBox = $("verify-report");
+  const file = input.files && input.files[0];
+  if (!file) { status.textContent = t("ws_verify_pick"); return; }
+  status.textContent = t("ws_verify_reading");
+  reportBox.hidden = true;
+  let bundle;
+  try {
+    bundle = JSON.parse(await file.text());
+  } catch (error) {
+    status.textContent = t("ws_verify_badfile");
+    return;
+  }
+  status.textContent = t("ws_verify_checking");
+  try {
+    const data = await api("/api/verify-export", { bundle });
+    if (!data.ok) { status.textContent = data.error || t("ws_verify_fail"); return; }
+    status.textContent = "";
+    renderVerifyReport(data.report);
+  } catch (error) {
+    status.textContent = t("request_failed") + error;
+  }
+}
+
+function renderVerifyReport(r) {
+  const box = $("verify-report");
+  box.hidden = false;
+  const mark = (ok) => badge(ok ? "good" : "bad", ok ? t("ws_verify_pass_word") : t("ws_verify_fail_word"));
+  const chain = el("span");
+  chain.appendChild(mark(r.audit_chain_verified));
+  chain.appendChild(document.createTextNode(" · " + t("ws_verify_events")(r.audit_events)));
+  const rows = [
+    [t("ws_verify_row_format"), mark(r.format_ok)],
+    [t("ws_verify_row_identity"), mark(r.identity_bound)],
+    [t("ws_verify_row_chain"), chain],
+    [t("ws_verify_row_state"), el("span", null, t("ws_verify_state")(r))],
+    [t("ws_verify_device"), el("span", "mono", r.device_id || "—")],
+  ];
+  const verdict = el("div");
+  verdict.appendChild(badge(r.ok ? "good" : "bad", r.ok ? t("ws_verify_pass") : t("ws_verify_fail")));
+  const children = [verdict];
+  rows.forEach(([label, node]) => {
+    const row = el("div", "toolbar");
+    row.appendChild(el("span", "status-line", label));
+    row.appendChild(node);
+    children.push(row);
+  });
+  (r.notes || []).forEach(note => children.push(el("div", "status-line", "• " + note)));
+  box.replaceChildren(...children);
+}
+
 /* ─────────────── Command Center ─────────────── */
 
 async function loadCommandCenter() {
@@ -806,6 +895,7 @@ $("assist-copy").addEventListener("click", () => {
   $("assist-copy").textContent = t("ws_assist_copied");
   setTimeout(() => { $("assist-copy").textContent = t("ws_assist_copy"); }, 1500);
 });
+$("verify-btn").addEventListener("click", verifyBackup);
 $("d-offer").addEventListener("click", () => createDocument("offer"));
 $("d-invoice").addEventListener("click", () => createDocument("invoice"));
 $("run").addEventListener("click", runGauntlet);

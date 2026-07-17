@@ -201,6 +201,15 @@ fn device_fingerprint(public_key: &[u8; 32]) -> String {
     format!("dev_{}", hex::encode(&digest[..12]))
 }
 
+/// Recompute the device id a public key must have. Lets a verifier bind an
+/// exported audit history to the identity it claims: if this equals the
+/// bundle's `device_id`, the signing key really is that device's key. The
+/// input must be canonical padded Base64 of a valid 32-byte Ed25519 key.
+pub fn device_id_from_public_key_b64(public_key_b64: &str) -> Result<String, IdentityError> {
+    let verifying_key = decode_verifying_key(public_key_b64)?;
+    Ok(device_fingerprint(&verifying_key.to_bytes()))
+}
+
 fn decode_verifying_key(public_key_b64: &str) -> Result<VerifyingKey, IdentityError> {
     let public_bytes = STANDARD
         .decode(public_key_b64)

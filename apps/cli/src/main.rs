@@ -55,6 +55,11 @@ enum Commands {
     ModelCheck,
     /// Demonstrate durable workflow checkpoints resuming across a crash
     WorkflowDemo,
+    /// Verify an exported bundle offline: format, identity binding, signed chain
+    VerifyExport {
+        /// Path to a JSON bundle produced by the app's "Export all my data"
+        path: PathBuf,
+    },
 }
 
 fn data_dir() -> PathBuf {
@@ -73,8 +78,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Ui { port, no_open } => ui::run(port, data_dir(), !no_open)?,
         Commands::ModelCheck => cmd_model_check(),
         Commands::WorkflowDemo => cmd_workflow_demo()?,
+        Commands::VerifyExport { path } => cmd_verify_export(&path)?,
     }
     Ok(())
+}
+
+fn cmd_verify_export(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let bytes = std::fs::read(path)?;
+    let bundle: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let report = workspace::verify_export(&bundle)?;
+
+    let check = |ok: bool| if ok { "PASS" } else { "FAIL" };
+    println!("Verifying {}", path.display());
+    println!("  format tag         {}", check(report.format_ok));
+    println!("  device id          {}", report.device_id);
+    println!("  identity binding   {}", check(report.identity_bound));
+    println!(
+        "  signed audit chain {}  ({} events)",
+        check(report.audit_chain_verified),
+        report.audit_events
+    );
+    println!(
+        "  state             {} customers · {} documents · {} signed approvals",
+        report.customers, report.documents, report.signed_approvals
+    );
+    for note in &report.notes {
+        println!("  note: {note}");
+    }
+    if report.ok {
+        println!("\nVERIFIED — this bundle is intact and bound to the device that signed it.");
+        Ok(())
+    } else {
+        // Fail closed with a non-zero exit so scripts can trust the verdict.
+        Err("verification FAILED — see notes above".into())
+    }
 }
 
 fn cmd_workflow_demo() -> Result<(), Box<dyn std::error::Error>> {

@@ -111,6 +111,10 @@ fn route(request: &mut tiny_http::Request, port: u16, root: &Path) -> UiResponse
             Ok(body) => json_response(&workspace_assist(&body, root)),
             Err(error) => bad_request(&error),
         },
+        (Method::Post, "/api/verify-export") => match read_json_body(request) {
+            Ok(body) => json_response(&verify_export_json(&body)),
+            Err(error) => bad_request(&error),
+        },
         (Method::Post, path) if path.starts_with("/api/workspace/") => {
             match read_json_body(request) {
                 Ok(body) => json_response(&workspace_post(path, &body, root)),
@@ -274,6 +278,20 @@ fn workspace_assist(body: &serde_json::Value, root: &Path) -> serde_json::Value 
     })();
     match result {
         Ok(suggestion) => serde_json::json!({ "ok": true, "suggestion": suggestion }),
+        Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
+    }
+}
+
+/// Verify a bundle the user pasted or loaded in the browser. Pure: it opens no
+/// store and needs no device, so it also works for a backup made on another
+/// machine. The `bundle` is the exported JSON, nested under a `bundle` key.
+fn verify_export_json(body: &serde_json::Value) -> serde_json::Value {
+    let bundle = match body.get("bundle") {
+        Some(bundle) if !bundle.is_null() => bundle,
+        _ => return serde_json::json!({ "ok": false, "error": "no bundle provided" }),
+    };
+    match workspace::verify_export(bundle) {
+        Ok(report) => serde_json::json!({ "ok": true, "report": report }),
         Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
     }
 }

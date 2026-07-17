@@ -172,6 +172,7 @@ cargo run -p sovereign-cli -- demo          # add --fast to skip the pauses
 cargo run -p sovereign-cli -- ui            # local app at http://127.0.0.1:7787
 cargo run -p sovereign-cli -- model-check   # model failover + Red-data guard
 cargo run -p sovereign-cli -- workflow-demo # crash-safe workflow resume
+cargo run -p sovereign-cli -- verify-export backup.json  # offline backup verification
 ```
 
 `demo` is a story-driven walkthrough of the secure kernel: it creates your
@@ -196,12 +197,15 @@ tampering) — every denial is a real enforcement path, not a mock.
   the resilient model gateway) to suggest outreach text — a suggestion that is
   never saved to authoritative state and whose only footprint is an audited
   disclosure — request to send a document (which always stops in the Approval
-  Center for the human owner), and export every byte of your business state as
-  one JSON file. State lives in the encrypted vault; every change passes the policy
-  engine and appends a signed audit event. Approving a send authorizes one
-  exact sandboxed execution that writes the document to a local `outbox/` file
-  (a real, audited host effect) and records the signed evidence; Stage 1
-  performs no *network* effects — nothing leaves the device.
+  Center for the human owner), export every byte of your business state as one
+  JSON file, and verify any such backup — this machine or another — entirely
+  offline (format, the audit history's cryptographic binding to the device that
+  signed it, and full re-computation of the signed chain). State lives in the
+  encrypted vault; every change passes the policy engine and appends a signed
+  audit event. Approving a send authorizes one exact sandboxed execution that
+  writes the document to a local `outbox/` file (a real, audited host effect)
+  and records the signed evidence; Stage 1 performs no *network* effects —
+  nothing leaves the device.
 - **Security Center** — device identity, vault entries, admitted plugins
   (verified from the content-addressed store), the signed audit chain, and a
   one-click in-memory run of the attack gauntlet.
