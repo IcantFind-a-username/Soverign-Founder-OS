@@ -149,6 +149,7 @@ crates/
   identity/       device keys and signing
   artifact/       signed manifests, exact invocation preparation, local admission store
   audit-ledger/   append-only signed event log
+  authority/      durable cross-process one-use consumption (tokens, approvals, idempotency)
   policy/         deterministic permission engine
   capability/     legacy V1 and exact-bound Capability V2 tokens
   vault/          local encrypted storage
@@ -192,7 +193,7 @@ The server binds loopback only, rejects foreign `Host` headers
 (DNS-rebinding defense), and requires `application/json` bodies on mutations
 (CSRF defense). It exposes no secrets and never leaves your machine.
 
-The isolated paths currently permit import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. The Phase B foundation verifies role-separated publisher signatures, owns the exact artifact bytes, canonicalizes and binds security-relevant input and resources, and requires an exact one-use Capability V2 before the verified Wasmtime path starts. Its replay state is process-local, and the current core-Wasm ABI does not deliver canonical input to the guest.
+The isolated paths currently permit import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. The Phase B foundation verifies role-separated publisher signatures, owns the exact artifact bytes, canonicalizes and binds security-relevant input and resources, and requires an exact one-use Capability V2 before the verified Wasmtime path starts. Replay state is process-local by default and durable when the Authority Store is attached (the workspace app attaches it); the current core-Wasm ABI does not deliver canonical input to the guest.
 
 The artifact crate now also provides the local admission transaction: an owner-controlled content-addressed store plus a locally signed admission record (`artifact-admission` COSE role) that promotes a publisher-verified artifact to an `AdmittedArtifact`, with every load re-deriving digests from the stored bytes. The verified executor does not yet require the admitted handle.
 

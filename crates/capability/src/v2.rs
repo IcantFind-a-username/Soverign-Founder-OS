@@ -2,9 +2,11 @@
 //!
 //! This module does not upgrade or accept a V1 token. It accepts only the
 //! artifact layer's opaque [`PreparedInvocation`], which prevents callers from
-//! inventing digest views that were never prepared by the artifact boundary. Replay and idempotency
-//! state is process-local in this stage, so effectful execution remains
-//! disabled until the durable Authority Store exists.
+//! inventing digest views that were never prepared by the artifact boundary.
+//! Replay and idempotency defense is process-local by default; attaching a
+//! durable [`AuthorityStore`] makes consumption survive restarts and
+//! concurrent processes. Effectful execution additionally requires crash-safe
+//! audit ordering and reviewed host interfaces, which do not exist yet.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -16,6 +18,8 @@ use sovereign_artifact::{
 };
 use sovereign_identity::{ApprovalRole, AuthorityRole, IdentityError, RoleTrustStore, TypedSigner};
 use sovereign_policy::PolicyAuthorizationV2;
+
+use sovereign_authority::{AuthorityError, AuthorityStore};
 
 use crate::approval::SignedApprovalV1;
 use thiserror::Error;
@@ -292,6 +296,8 @@ pub enum CapabilityV2Error {
     InvalidApprovalEnvelope,
     #[error("approval verification failed")]
     ApprovalVerificationFailed,
+    #[error("durable authority store unavailable or corrupt; execution denied")]
+    AuthorityStoreUnavailable,
 }
 
 #[derive(Debug, Clone)]
@@ -525,6 +531,7 @@ pub struct CapabilityValidatorV2<C: TrustedClock> {
     idempotency: HashMap<Uuid, Digest>,
     approvals: Option<ApprovalTrust>,
     consumed_approvals: HashSet<Uuid>,
+    authority_store: Option<AuthorityStore>,
 }
 
 impl<C: TrustedClock> CapabilityValidatorV2<C> {
@@ -547,6 +554,7 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
             idempotency: HashMap::new(),
             approvals: None,
             consumed_approvals: HashSet::new(),
+            authority_store: None,
         })
     }
 
@@ -564,6 +572,15 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
             expected_issuer,
         });
         Ok(self)
+    }
+
+    /// Attach a durable Authority Store. Consumption of tokens, approvals,
+    /// and idempotency keys then survives restarts and concurrent processes;
+    /// a store failure denies execution (fail closed). Without a store,
+    /// replay defense remains process-local, as documented.
+    pub fn with_authority_store(mut self, store: AuthorityStore) -> Self {
+        self.authority_store = Some(store);
+        self
     }
 
     /// Verify every binding and consume the one-use token before guest startup.
@@ -725,6 +742,28 @@ impl<C: TrustedClock> CapabilityValidatorV2<C> {
                 return Err(CapabilityV2Error::IdempotencyReplay);
             }
             return Err(CapabilityV2Error::IdempotencyConflict);
+        }
+
+        // Durable claims come after every validation and before the
+        // process-local bookkeeping. A partial failure burns the earlier
+        // claims and denies the request: fail closed, never fail open.
+        if let Some(store) = &self.authority_store {
+            store
+                .consume_token(claims.token_id, now_unix, claims.expires_at_unix)
+                .map_err(map_authority_error_token)?;
+            store
+                .bind_idempotency(
+                    claims.idempotency_key,
+                    fingerprint.as_bytes(),
+                    now_unix,
+                    claims.expires_at_unix,
+                )
+                .map_err(map_authority_error_idempotency)?;
+            if let Some(approval_id) = approval_id {
+                store
+                    .consume_approval(approval_id, now_unix, claims.expires_at_unix)
+                    .map_err(map_authority_error_approval)?;
+            }
         }
 
         self.consumed_tokens.insert(claims.token_id);
@@ -1026,6 +1065,28 @@ fn compare_invocation_claims(
         return Err(CapabilityV2Error::InvocationMismatch("backend"));
     }
     Ok(())
+}
+
+fn map_authority_error_token(error: AuthorityError) -> CapabilityV2Error {
+    match error {
+        AuthorityError::AlreadyConsumed => CapabilityV2Error::Replay,
+        _ => CapabilityV2Error::AuthorityStoreUnavailable,
+    }
+}
+
+fn map_authority_error_idempotency(error: AuthorityError) -> CapabilityV2Error {
+    match error {
+        AuthorityError::IdempotencyReplay => CapabilityV2Error::IdempotencyReplay,
+        AuthorityError::IdempotencyConflict => CapabilityV2Error::IdempotencyConflict,
+        _ => CapabilityV2Error::AuthorityStoreUnavailable,
+    }
+}
+
+fn map_authority_error_approval(error: AuthorityError) -> CapabilityV2Error {
+    match error {
+        AuthorityError::AlreadyConsumed => CapabilityV2Error::ApprovalReused,
+        _ => CapabilityV2Error::AuthorityStoreUnavailable,
+    }
 }
 
 fn map_identity_error(error: IdentityError) -> CapabilityV2Error {

@@ -1386,6 +1386,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sovereign-authority"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "sovereign-capability"
 version = "0.1.0"
 dependencies = [
@@ -1394,9 +1406,11 @@ dependencies = [
  "serde_json",
  "serde_json_canonicalizer",
  "sovereign-artifact",
+ "sovereign-authority",
  "sovereign-contracts",
  "sovereign-identity",
  "sovereign-policy",
+ "tempfile",
  "thiserror 2.0.18",
  "uuid",
 ]
@@ -1415,6 +1429,7 @@ dependencies = [
  "serde_json_canonicalizer",
  "sovereign-artifact",
  "sovereign-audit-ledger",
+ "sovereign-authority",
  "sovereign-capability",
  "sovereign-contracts",
  "sovereign-identity",

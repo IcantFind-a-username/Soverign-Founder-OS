@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/authority",
     "crates/contracts",
     "crates/identity",
     "crates/artifact",
@@ -21,6 +22,7 @@ license = "Apache-2.0"
 repository = "https://github.com/IcantFind-a-username/Sovereign-Founder-OS"
 
 [workspace.dependencies]
+sovereign-authority = { path = "crates/authority" }
 sovereign-contracts = { path = "crates/contracts" }
 sovereign-identity = { path = "crates/identity" }
 sovereign-artifact = { path = "crates/artifact" }

@@ -625,3 +625,94 @@ fn approved_token_without_presented_object_fails_closed() {
         CapabilityV2Error::ApprovalTrustUnavailable
     );
 }
+
+#[test]
+fn durable_store_denies_replay_across_validator_restarts() {
+    let dir = tempfile::tempdir().unwrap();
+    let invocation = prepared("durable input");
+    let idempotency = Uuid::from_u128(21);
+    let policy_decision = decision(&invocation, AutomationLevel::L3BoundedAuto, idempotency);
+    let approval = approve_at(NOW + 5, &invocation, &policy_decision, 300);
+    let token = issuer_at(NOW + 10)
+        .issue_approved(
+            request(&invocation, &policy_decision, idempotency),
+            &approval,
+        )
+        .unwrap();
+
+    // First "process": consumes token, idempotency key, and approval durably.
+    let mut first = validator_at(NOW + 20)
+        .with_authority_store(sovereign_authority::AuthorityStore::open(dir.path()).unwrap());
+    consume(
+        &mut first,
+        &token,
+        &invocation,
+        &policy_decision,
+        Some(&approval),
+    )
+    .unwrap();
+
+    // Second "process" after a restart: fresh validator, empty in-memory
+    // state, same store directory. Replay must still be denied.
+    let mut second = validator_at(NOW + 25)
+        .with_authority_store(sovereign_authority::AuthorityStore::open(dir.path()).unwrap());
+    assert_eq!(
+        consume(
+            &mut second,
+            &token,
+            &invocation,
+            &policy_decision,
+            Some(&approval),
+        )
+        .unwrap_err(),
+        CapabilityV2Error::Replay
+    );
+
+    // A different token minted from the same approval also fails after
+    // restart: the approval id was durably consumed.
+    let second_token = issuer_at(NOW + 10)
+        .issue_approved(
+            request(&invocation, &policy_decision, idempotency),
+            &approval,
+        )
+        .unwrap();
+    let mut third = validator_at(NOW + 30)
+        .with_authority_store(sovereign_authority::AuthorityStore::open(dir.path()).unwrap());
+    let error = consume(
+        &mut third,
+        &second_token,
+        &invocation,
+        &policy_decision,
+        Some(&approval),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            CapabilityV2Error::IdempotencyReplay | CapabilityV2Error::ApprovalReused
+        ),
+        "durable idempotency or approval consumption must deny: {error:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn broken_authority_store_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = sovereign_authority::AuthorityStore::open(dir.path()).unwrap();
+    // Break the store after opening: replace the tokens directory with a file.
+    std::fs::remove_dir_all(dir.path().join("tokens")).unwrap();
+    std::fs::write(dir.path().join("tokens"), b"broken").unwrap();
+
+    let invocation = prepared("plain input");
+    let idempotency = Uuid::from_u128(22);
+    let policy_decision = decision(&invocation, AutomationLevel::L1Draft, idempotency);
+    let token = issuer_at(NOW + 5)
+        .issue(request(&invocation, &policy_decision, idempotency))
+        .unwrap();
+    let mut validator = validator_at(NOW + 10).with_authority_store(store);
+    assert_eq!(
+        consume(&mut validator, &token, &invocation, &policy_decision, None).unwrap_err(),
+        CapabilityV2Error::AuthorityStoreUnavailable
+    );
+}

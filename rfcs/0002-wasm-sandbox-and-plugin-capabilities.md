@@ -304,7 +304,7 @@ The runtime uses a durable Authority Store. Validation and reservation/consumpti
 
 An unavailable Authority Store denies execution. Process-local counters are not sufficient for Capability V2.
 
-This is a target requirement, not a claim about the current branch. Until the durable Authority Store exists, V2 tokens are restricted to pure computation with no host effects, and restart-safe or multi-process replay resistance is not claimed.
+The durable Authority Store now exists (`sovereign-authority`): consumption of tokens, approvals, and idempotency keys is a crash-safe atomic filesystem claim shared across processes, and an unavailable or corrupt store denies execution. Validators without an attached store remain process-local, and V2 tokens stay restricted to pure computation until crash-safe audit ordering and reviewed host interfaces also exist.
 
 Production time comes from a trusted runtime clock. An untrusted caller cannot provide the validation timestamp.
 

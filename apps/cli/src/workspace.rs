@@ -728,7 +728,11 @@ impl Store {
         )
         .map_err(kernel)?
         .with_approval_trust(approval_trust_for_validator, OWNER_APPROVAL_ISSUER)
-        .map_err(kernel)?;
+        .map_err(kernel)?
+        .with_authority_store(
+            sovereign_authority::AuthorityStore::open(self.root.join("authority"))
+                .map_err(kernel)?,
+        );
         let mut executor =
             VerifiedSandboxExecutor::new(vec![selector], validator).map_err(kernel)?;
         let result = executor
