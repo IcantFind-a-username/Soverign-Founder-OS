@@ -125,6 +125,10 @@ pub enum DocumentStatus {
     /// The signed approval evidence remains; the local effect was undone and
     /// the revocation is itself audited.
     Revoked,
+    /// The owner has attested they delivered the composed message to the
+    /// customer themselves. Stage 1 sends nothing over the network — this is a
+    /// human attestation, recorded as a signed audit event, not a system send.
+    Delivered,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -841,6 +845,34 @@ impl Store {
                 "outbox_path": outbox.relative_path,
                 "content_sha256": outbox.content_sha256,
             }),
+        )?;
+        Ok(workspace)
+    }
+
+    /// Record the owner's attestation that they delivered the composed message
+    /// to the customer themselves. This is deliberately honest: Stage 1 sends
+    /// nothing over the network, so the system never claims to have delivered
+    /// anything — it records the owner's own confirmation as a signed audit
+    /// event and moves the document to `Delivered`. Fails closed unless the
+    /// document is approved and awaiting delivery.
+    pub fn confirm_delivery(&self, document_id: Uuid) -> Result<Workspace, WorkspaceError> {
+        let mut workspace = self.load()?;
+        let document = workspace
+            .documents
+            .iter_mut()
+            .find(|document| document.id == document_id)
+            .ok_or_else(|| WorkspaceError::NotFound("document".into()))?;
+        if document.status != DocumentStatus::ApprovedPendingDelivery {
+            return Err(WorkspaceError::Invalid(
+                "only an approved, undelivered document can be confirmed delivered".into(),
+            ));
+        }
+        document.status = DocumentStatus::Delivered;
+        self.save(&workspace)?;
+        self.record(
+            "delivery.confirmed",
+            &format!("document:{document_id}"),
+            serde_json::json!({ "attested_by": "founder", "system_sent": false }),
         )?;
         Ok(workspace)
     }
@@ -1842,6 +1874,49 @@ mod tests {
         ));
         assert!(matches!(
             store.revoke_delivery(Uuid::new_v4()),
+            Err(WorkspaceError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn confirm_delivery_is_an_audited_attestation() {
+        let (dir, store) = store();
+        store.set_venture("Acme", "Landing pages").unwrap();
+        let workspace = store
+            .add_customer("Dr. Tan", "dr.tan@example.com", "")
+            .unwrap();
+        let customer_id = workspace.customers[0].id;
+        let workspace = store
+            .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
+            .unwrap();
+        let document_id = workspace.documents[0].id;
+        let workspace = store.request_send(document_id).unwrap();
+        store.decide(workspace.approvals[0].id, true).unwrap();
+
+        let workspace = store.confirm_delivery(document_id).unwrap();
+        assert_eq!(workspace.documents[0].status, DocumentStatus::Delivered);
+
+        // The attestation is on the signed chain and honestly marks that the
+        // system did not send anything.
+        let device = DeviceIdentity::load(&dir.path().join("device.json")).unwrap();
+        let ledger =
+            AuditLedger::load(&dir.path().join("ledger.json"), device.public_key_b64()).unwrap();
+        let last = ledger.events().last().unwrap();
+        assert_eq!(last.action, "delivery.confirmed");
+        ledger.verify_chain().unwrap();
+
+        // A delivered document cannot be confirmed again or revoked, and an
+        // unknown document fails closed.
+        assert!(matches!(
+            store.confirm_delivery(document_id),
+            Err(WorkspaceError::Invalid(_))
+        ));
+        assert!(matches!(
+            store.revoke_delivery(document_id),
+            Err(WorkspaceError::Invalid(_))
+        ));
+        assert!(matches!(
+            store.confirm_delivery(Uuid::new_v4()),
             Err(WorkspaceError::NotFound(_))
         ));
     }

@@ -319,10 +319,11 @@ const STRINGS = {
     ws_no_documents: "No documents yet — add a customer, then generate an offer or invoice.",
     ws_view_content: "View content",
     ws_submit_send: "Request to send",
-    ws_revoke: "Revoke",
+    ws_revoke: "Revoke", ws_mark_delivered: "Mark delivered",
     status_draft: "draft", status_pending_approval: "awaiting your approval",
     status_approved_pending_delivery: "approved — .eml composed in outbox, not sent (delivery is yours)",
     status_revoked: "revoked — outbox file deleted",
+    status_delivered: "delivered — you confirmed you sent it",
     ws_evidence: (e) => "✓ signed approval " + e.evidence_digest.slice(0, 12) + "… · approver key " + e.approver_key_id.slice(0, 12) + "… · sandboxed run exit " + e.guest_exit_code,
     ws_outbox: (o) => "→ written to outbox/" + o.relative_path + " · sha256 " + o.content_sha256.slice(0, 12) + "… · " + o.bytes + " bytes",
     status_rejected: "rejected",
@@ -425,10 +426,11 @@ const STRINGS = {
     ws_no_documents: "暂无文档——先添加客户,再生成报价单或发票。",
     ws_view_content: "查看内容",
     ws_submit_send: "申请发送",
-    ws_revoke: "撤销",
+    ws_revoke: "撤销", ws_mark_delivered: "标记为已送达",
     status_draft: "草稿", status_pending_approval: "等待你的审批",
     status_approved_pending_delivery: "已批准 — .eml 已在发件箱生成,尚未发送(发送由你完成)",
     status_revoked: "已撤销 — 发件箱文件已删除",
+    status_delivered: "已送达 — 你已确认自行发送",
     ws_evidence: (e) => "✓ 签名审批 " + e.evidence_digest.slice(0, 12) + "… · 审批人密钥 " + e.approver_key_id.slice(0, 12) + "… · 沙箱执行返回 " + e.guest_exit_code,
     ws_outbox: (o) => "→ 已写入 outbox/" + o.relative_path + " · sha256 " + o.content_sha256.slice(0, 12) + "… · " + o.bytes + " 字节",
     status_rejected: "已拒绝",
@@ -581,7 +583,7 @@ function renderWorkspace() {
       const head = el("div", "doc-head");
       head.appendChild(el("span", "badge neutral", t(d.kind === "offer" ? "kind_offer" : "kind_invoice")));
       head.appendChild(el("span", "title", d.title));
-      const statusKind = { draft: "neutral", pending_approval: "warn", approved_pending_delivery: "good", rejected: "bad", revoked: "neutral" }[d.status] || "neutral";
+      const statusKind = { draft: "neutral", pending_approval: "warn", approved_pending_delivery: "good", rejected: "bad", revoked: "neutral", delivered: "good" }[d.status] || "neutral";
       head.appendChild(badge(statusKind, t("status_" + d.status)));
       if (d.status === "draft") {
         const submit = el("button", "ghost small", t("ws_submit_send"));
@@ -593,6 +595,13 @@ function renderWorkspace() {
         head.appendChild(submit);
       }
       if (d.status === "approved_pending_delivery") {
+        const delivered = el("button", "ghost small", t("ws_mark_delivered"));
+        delivered.addEventListener("click", async () => {
+          const result = await api("/api/workspace/confirm-delivery", { document_id: d.id });
+          if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
+          else $("d-status").textContent = result.error;
+        });
+        head.appendChild(delivered);
         const revoke = el("button", "ghost small", t("ws_revoke"));
         revoke.addEventListener("click", async () => {
           const result = await api("/api/workspace/revoke", { document_id: d.id });
