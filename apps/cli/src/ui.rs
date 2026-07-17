@@ -11,6 +11,7 @@
 //! - this page is a Stage 1 preview of the future Founder Command Center, not
 //!   the product UI.
 
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use chrono::Duration;
@@ -35,26 +36,202 @@ use tiny_http::{Header, Method, Response, Server};
 use uuid::Uuid;
 
 use crate::demo;
+use crate::workspace;
 
 const UI_HTML: &str = include_str!("../assets/ui.html");
+
+const MAX_REQUEST_BODY_BYTES: usize = 64 * 1024;
 
 pub fn run(port: u16, root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let server = Server::http(("127.0.0.1", port))
         .map_err(|error| format!("cannot bind 127.0.0.1:{port}: {error}"))?;
-    println!("Sovereign Local Security Center");
+    println!("Sovereign Founder OS · local app");
     println!("  http://127.0.0.1:{port}");
-    println!("  loopback only · read-only state · in-memory gauntlet · Ctrl-C to stop");
+    println!("  loopback only · encrypted local state · Ctrl-C to stop");
 
-    for request in server.incoming_requests() {
-        let response = match (request.method(), request.url()) {
-            (Method::Get, "/") => html_response(UI_HTML),
-            (Method::Get, "/api/state") => json_response(&state_json(&root)),
-            (Method::Post, "/api/gauntlet") => json_response(&gauntlet_json()),
-            _ => Response::from_string("not found").with_status_code(404),
-        };
+    for mut request in server.incoming_requests() {
+        let response = route(&mut request, port, &root);
         let _ = request.respond(response);
     }
     Ok(())
+}
+
+type UiResponse = Response<std::io::Cursor<Vec<u8>>>;
+
+fn route(request: &mut tiny_http::Request, port: u16, root: &Path) -> UiResponse {
+    // DNS-rebinding defense: a browser lured to attacker.example resolving to
+    // 127.0.0.1 still sends the attacker's Host header; refuse it.
+    if !host_allowed(request, port) {
+        return json_response(&serde_json::json!({ "ok": false, "error": "forbidden host" }))
+            .with_status_code(403);
+    }
+    let url = request.url().to_owned();
+    match (request.method().clone(), url.as_str()) {
+        (Method::Get, "/") => html_response(UI_HTML),
+        (Method::Get, "/api/state") => json_response(&state_json(root)),
+        (Method::Get, "/api/workspace") => json_response(&workspace_get(root)),
+        (Method::Get, "/api/export") => export_response(root),
+        (Method::Post, "/api/gauntlet") => match read_json_body(request) {
+            Ok(_) => json_response(&gauntlet_json()),
+            Err(error) => bad_request(&error),
+        },
+        (Method::Post, path) if path.starts_with("/api/workspace/") => {
+            match read_json_body(request) {
+                Ok(body) => json_response(&workspace_post(path, &body, root)),
+                Err(error) => bad_request(&error),
+            }
+        }
+        _ => Response::from_string("not found").with_status_code(404),
+    }
+}
+
+fn host_allowed(request: &tiny_http::Request, port: u16) -> bool {
+    let allowed = [
+        format!("127.0.0.1:{port}"),
+        format!("localhost:{port}"),
+        "127.0.0.1".to_owned(),
+        "localhost".to_owned(),
+    ];
+    request
+        .headers()
+        .iter()
+        .find(|header| header.field.equiv("Host"))
+        .map(|header| {
+            let value = header.value.as_str();
+            allowed.iter().any(|candidate| candidate == value)
+        })
+        .unwrap_or(false)
+}
+
+/// Read a JSON request body. Requiring `Content-Type: application/json` is a
+/// CSRF defense: cross-origin pages cannot send that content type without a
+/// CORS preflight, which this server never approves.
+fn read_json_body(request: &mut tiny_http::Request) -> Result<serde_json::Value, String> {
+    let is_json = request
+        .headers()
+        .iter()
+        .find(|header| header.field.equiv("Content-Type"))
+        .map(|header| {
+            header
+                .value
+                .as_str()
+                .to_ascii_lowercase()
+                .starts_with("application/json")
+        })
+        .unwrap_or(false);
+    if !is_json {
+        return Err("Content-Type must be application/json".into());
+    }
+    let mut body = Vec::new();
+    std::io::Read::take(request.as_reader(), (MAX_REQUEST_BODY_BYTES + 1) as u64)
+        .read_to_end(&mut body)
+        .map_err(|error| error.to_string())?;
+    if body.len() > MAX_REQUEST_BODY_BYTES {
+        return Err("request body too large".into());
+    }
+    if body.is_empty() {
+        return Ok(serde_json::json!({}));
+    }
+    serde_json::from_slice(&body).map_err(|error| format!("invalid JSON body: {error}"))
+}
+
+fn bad_request(message: &str) -> UiResponse {
+    json_response(&serde_json::json!({ "ok": false, "error": message })).with_status_code(400)
+}
+
+fn workspace_get(root: &Path) -> serde_json::Value {
+    let result = workspace::Store::open(root).and_then(|store| store.load());
+    match result {
+        Ok(state) => serde_json::json!({ "ok": true, "workspace": state }),
+        Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
+    }
+}
+
+fn workspace_post(path: &str, body: &serde_json::Value, root: &Path) -> serde_json::Value {
+    let result = (|| {
+        let store = workspace::Store::open(root)?;
+        match path {
+            "/api/workspace/venture" => {
+                store.set_venture(str_field(body, "name")?, str_field(body, "service")?)
+            }
+            "/api/workspace/customer" => store.add_customer(
+                str_field(body, "name")?,
+                body.get("notes").and_then(|v| v.as_str()).unwrap_or(""),
+            ),
+            "/api/workspace/offer" => store.create_document(
+                workspace::DocumentKind::Offer,
+                uuid_field(body, "customer_id")?,
+                None,
+                lang_field(body),
+            ),
+            "/api/workspace/invoice" => store.create_document(
+                workspace::DocumentKind::Invoice,
+                uuid_field(body, "customer_id")?,
+                Some(workspace::parse_amount_cents(str_field(body, "amount")?)?),
+                lang_field(body),
+            ),
+            "/api/workspace/request-send" => store.request_send(uuid_field(body, "document_id")?),
+            "/api/workspace/decide" => store.decide(
+                uuid_field(body, "approval_id")?,
+                body.get("approve")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            ),
+            _ => Err(workspace::WorkspaceError::NotFound("route".into())),
+        }
+    })();
+    match result {
+        Ok(state) => serde_json::json!({ "ok": true, "workspace": state }),
+        Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
+    }
+}
+
+fn export_response(root: &Path) -> UiResponse {
+    let export = workspace::Store::open(root).and_then(|store| store.export());
+    match export {
+        Ok(bundle) => {
+            let pretty =
+                serde_json::to_string_pretty(&bundle).unwrap_or_else(|_| bundle.to_string());
+            Response::from_string(pretty)
+                .with_header(
+                    Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                        .expect("static header"),
+                )
+                .with_header(
+                    Header::from_bytes(
+                        &b"Content-Disposition"[..],
+                        &b"attachment; filename=\"sovereign-export.json\""[..],
+                    )
+                    .expect("static header"),
+                )
+        }
+        Err(error) => {
+            json_response(&serde_json::json!({ "ok": false, "error": error.to_string() }))
+                .with_status_code(500)
+        }
+    }
+}
+
+fn str_field<'a>(
+    body: &'a serde_json::Value,
+    field: &str,
+) -> Result<&'a str, workspace::WorkspaceError> {
+    body.get(field)
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| workspace::WorkspaceError::Invalid(format!("{field} is required")))
+}
+
+fn uuid_field(body: &serde_json::Value, field: &str) -> Result<Uuid, workspace::WorkspaceError> {
+    str_field(body, field)?
+        .parse()
+        .map_err(|_| workspace::WorkspaceError::Invalid(format!("{field} must be a UUID")))
+}
+
+fn lang_field(body: &serde_json::Value) -> &str {
+    match body.get("lang").and_then(|value| value.as_str()) {
+        Some(lang) if lang.starts_with("zh") => "zh",
+        _ => "en",
+    }
 }
 
 fn html_response(body: &str) -> Response<std::io::Cursor<Vec<u8>>> {

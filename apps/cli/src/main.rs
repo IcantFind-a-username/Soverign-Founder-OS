@@ -1,5 +1,6 @@
 mod demo;
 mod ui;
+mod workspace;
 
 use clap::{Parser, Subcommand};
 use sovereign_audit_ledger::AuditLedger;

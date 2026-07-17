@@ -151,11 +151,22 @@ gauntlet (supply-chain tampering, token replay, input substitution, greedy
 manifests, infinite loops, red-data exfiltration, approval bypass, and audit
 tampering) — every denial is a real enforcement path, not a mock.
 
-`ui` serves a local Security Center dashboard on 127.0.0.1 only: your device
-identity, encrypted vault entries, admitted plugins (verified from the
-content-addressed store), the signed audit chain, and a one-click in-memory
-run of the same attack gauntlet. It is a Stage 1 preview of the future
-Founder Command Center, exposes no secrets, and never leaves your machine.
+`ui` serves the local app on 127.0.0.1 only (English/中文). It has two views:
+
+- **Workspace** — the first usable product slice: create your company profile,
+  add customers, generate offer and invoice drafts (local templates, no model),
+  request to send a document — which always stops in the Approval Center for
+  the human owner — and export every byte of your business state as one JSON
+  file. State lives in the encrypted vault; every change passes the policy
+  engine and appends a signed audit event. Approving a send only records the
+  decision: Stage 1 performs no external effects.
+- **Security Center** — device identity, vault entries, admitted plugins
+  (verified from the content-addressed store), the signed audit chain, and a
+  one-click in-memory run of the attack gauntlet.
+
+The server binds loopback only, rejects foreign `Host` headers
+(DNS-rebinding defense), and requires `application/json` bodies on mutations
+(CSRF defense). It exposes no secrets and never leaves your machine.
 
 The isolated paths currently permit import-free pure computation only. Environment, filesystem, network, WASI, and every other host import are denied. The Phase B foundation verifies role-separated publisher signatures, owns the exact artifact bytes, canonicalizes and binds security-relevant input and resources, and requires an exact one-use Capability V2 before the verified Wasmtime path starts. Its replay state is process-local, and the current core-Wasm ABI does not deliver canonical input to the guest.
 
