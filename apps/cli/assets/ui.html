@@ -150,9 +150,18 @@
       <div class="toolbar">
         <button class="primary" id="d-offer" data-i18n="ws_gen_offer"></button>
         <button class="primary" id="d-invoice" data-i18n="ws_gen_invoice"></button>
+        <button class="ghost" id="d-assist" data-i18n="ws_assist"></button>
         <span class="status-line" id="d-status"></span>
       </div>
       <div class="status-line" data-i18n="ws_doc_note"></div>
+      <div id="assist-box" hidden>
+        <div class="toolbar" style="justify-content:space-between">
+          <span class="badge warn" id="assist-label"></span>
+          <button class="ghost small" id="assist-copy" data-i18n="ws_assist_copy"></button>
+        </div>
+        <textarea id="assist-text" readonly style="min-height:120px"></textarea>
+        <div class="status-line" id="assist-meta"></div>
+      </div>
     </div>
     <div class="panel" style="margin-top:10px"><div id="documents" class="empty" data-i18n="ws_no_documents"></div></div>
   </section>
@@ -222,6 +231,11 @@ const STRINGS = {
     ws_documents_title: "Documents",
     ws_for_customer: "For customer", ws_amount: "Amount",
     ws_gen_offer: "Generate offer draft", ws_gen_invoice: "Generate invoice draft",
+    ws_assist: "Draft outreach with assistant",
+    ws_assist_label: "model suggestion · not saved · untrusted",
+    ws_assist_copy: "Copy",
+    ws_assist_meta: (s) => "served by " + s.provider_id + " (" + s.provider_trust + ") · this is a suggestion, not authoritative state; copy it into a field to keep it",
+    ws_assist_copied: "copied",
     ws_doc_note: "Drafts are generated locally from templates — no model touches your business records in this stage.",
     ws_no_documents: "No documents yet — add a customer, then generate an offer or invoice.",
     ws_view_content: "View content",
@@ -278,6 +292,11 @@ const STRINGS = {
     ws_documents_title: "文档",
     ws_for_customer: "目标客户", ws_amount: "金额",
     ws_gen_offer: "生成报价单草稿", ws_gen_invoice: "生成发票草稿",
+    ws_assist: "用助手起草开发信",
+    ws_assist_label: "模型建议 · 未保存 · 不可信",
+    ws_assist_copy: "复制",
+    ws_assist_meta: (s) => "由 " + s.provider_id + "(" + s.provider_trust + ")生成 · 这是建议,不是权威数据;需复制到字段才会保存",
+    ws_assist_copied: "已复制",
     ws_doc_note: "草稿由本地模板生成——本阶段没有任何模型接触你的业务记录。",
     ws_no_documents: "暂无文档——先添加客户,再生成报价单或发票。",
     ws_view_content: "查看内容",
@@ -490,6 +509,21 @@ async function addCustomer() {
   else $("d-status").textContent = result.error;
 }
 
+async function draftAssist() {
+  const customer_id = $("d-customer").value;
+  if (!customer_id) { $("d-status").textContent = t("ws_no_customers"); return; }
+  $("d-status").textContent = "…";
+  const result = await api("/api/workspace/assist", { customer_id });
+  if (!result.ok) { $("d-status").textContent = result.error; return; }
+  $("d-status").textContent = "";
+  const s = result.suggestion;
+  $("assist-box").hidden = false;
+  $("assist-label").textContent = t("ws_assist_label");
+  $("assist-text").value = s.text;
+  $("assist-meta").textContent = t("ws_assist_meta")(s);
+  loadState();
+}
+
 async function createDocument(kind) {
   const body = { customer_id: $("d-customer").value };
   if (kind === "invoice") body.amount = $("d-amount").value;
@@ -623,6 +657,14 @@ $("tab-workspace").addEventListener("click", () => setView("workspace"));
 $("tab-security").addEventListener("click", () => setView("security"));
 $("v-save").addEventListener("click", saveVenture);
 $("c-add").addEventListener("click", addCustomer);
+$("d-assist").addEventListener("click", draftAssist);
+$("assist-copy").addEventListener("click", () => {
+  const text = $("assist-text").value;
+  if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+  else { $("assist-text").select(); document.execCommand("copy"); }
+  $("assist-copy").textContent = t("ws_assist_copied");
+  setTimeout(() => { $("assist-copy").textContent = t("ws_assist_copy"); }, 1500);
+});
 $("d-offer").addEventListener("click", () => createDocument("offer"));
 $("d-invoice").addEventListener("click", () => createDocument("invoice"));
 $("run").addEventListener("click", runGauntlet);

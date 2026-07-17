@@ -13,8 +13,11 @@
 //!   the human owner, and only the owner's signed approval unlocks the effect;
 //! - the founder can export every byte of their business state at any time.
 //!
-//! Honest labels: documents are template-generated (no model is involved)
-//! and the graph schema is a prototype. Approving a send runs the real RFC
+//! Honest labels: documents are template-generated and the graph schema is a
+//! prototype. A local drafting assistant (deterministic, not an LLM) can
+//! suggest outreach text through the resilient model gateway, but its output
+//! is untrusted, is never written to authoritative state, and holds no keys —
+//! only the disclosure is audited. Approving a send runs the real RFC
 //! 0003 chain — owner-signed approval evidence, a Capability V2 token issued
 //! from it, a pure-compute preparation step in the verified sandbox, and then
 //! the first real host effect: the approved document is written to the local
@@ -43,6 +46,7 @@ use sovereign_identity::{
     AdmissionRole, ApprovalRole, AuthorityRole, DeviceIdentity, KeyValidity, PublisherRole,
     RoleTrustStore, TypedSigner,
 };
+use sovereign_model::{DeterministicProvider, Health as ModelHealth, ModelGateway, ModelRequest};
 use sovereign_policy::{AuthenticatedPolicyContextV2, PolicyEngine};
 use sovereign_sandbox::{VerifiedExecutionRequest, VerifiedSandboxExecutor};
 use sovereign_vault::Vault;
@@ -174,6 +178,17 @@ pub struct OutboxWrite {
     pub relative_path: String,
     pub content_sha256: String,
     pub bytes: usize,
+}
+
+/// An untrusted model suggestion. `saved` is always false: the assistant never
+/// writes authoritative state, so the founder must copy this into a real field
+/// for it to persist. It carries no authority and no keys.
+#[derive(Debug, Clone, Serialize)]
+pub struct DraftSuggestion {
+    pub text: String,
+    pub provider_id: String,
+    pub provider_trust: String,
+    pub saved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -351,6 +366,81 @@ impl Store {
             serde_json::json!({ "name": name }),
         )?;
         Ok(workspace)
+    }
+
+    /// Ask the local drafting assistant for a suggested outreach note. This is
+    /// the model layer in action, and it is deliberately powerless: the
+    /// suggestion is untrusted model output routed through the resilient
+    /// gateway, it is **never written to authoritative state**, it holds no
+    /// keys, and the founder must copy it into a real field to keep it. Only
+    /// the disclosure (which provider saw Amber data) is audited.
+    ///
+    /// The provider is a deterministic local drafter, not an LLM. The gateway
+    /// gives it health-aware failover and a data-disclosure record; Red data
+    /// would never be routed to a non-local provider.
+    pub fn draft_assistant(
+        &self,
+        customer_id: Uuid,
+        lang: &str,
+    ) -> Result<DraftSuggestion, WorkspaceError> {
+        let workspace = self.load()?;
+        let venture = workspace
+            .venture
+            .clone()
+            .ok_or_else(|| WorkspaceError::Invalid("create the venture profile first".into()))?;
+        let customer = workspace
+            .customers
+            .iter()
+            .find(|customer| customer.id == customer_id)
+            .cloned()
+            .ok_or_else(|| WorkspaceError::NotFound("customer".into()))?;
+
+        let note = draft_outreach_note(&venture, &customer, lang.starts_with("zh"));
+        let gateway = ModelGateway::new(vec![
+            Box::new(DeterministicProvider::local_echo(
+                "local-drafter",
+                ModelHealth::Healthy,
+            )),
+            Box::new(DeterministicProvider::local_echo(
+                "local-drafter-backup",
+                ModelHealth::Healthy,
+            )),
+        ]);
+        let (response, disclosure) = gateway
+            .complete(&ModelRequest {
+                task: "draft_outreach".into(),
+                prompt: note,
+                // Business outreach about a named customer is Amber; it stays
+                // local here, and would never be routed to a cloud provider.
+                data_class: DataClass::Amber,
+                max_output_chars: 8192,
+            })
+            .map_err(|error| WorkspaceError::Invalid(format!("drafting assistant: {error}")))?;
+
+        // Record only the disclosure — never the suggestion — as evidence.
+        self.record(
+            "model.drafted",
+            &format!("customer:{customer_id}"),
+            serde_json::json!({
+                "task": disclosure.task,
+                "provider": disclosure.provider_id,
+                "provider_trust": format!("{:?}", disclosure.provider_trust).to_lowercase(),
+                "data_class": "amber",
+                "output_chars": disclosure.output_chars,
+                "failover_from": disclosure
+                    .skipped
+                    .iter()
+                    .map(|entry| entry.provider_id.clone())
+                    .collect::<Vec<_>>(),
+            }),
+        )?;
+
+        Ok(DraftSuggestion {
+            text: response.text,
+            provider_id: response.provider_id,
+            provider_trust: format!("{:?}", response.provider_trust).to_lowercase(),
+            saved: false,
+        })
     }
 
     pub fn create_document(
@@ -903,6 +993,27 @@ fn kernel(error: impl std::fmt::Display) -> WorkspaceError {
     WorkspaceError::Storage(format!("kernel chain failed closed: {error}"))
 }
 
+fn draft_outreach_note(venture: &Venture, customer: &Customer, zh: bool) -> String {
+    // Deterministic local drafting logic — this is the "assistant" content.
+    // It composes from known facts only; it invents nothing and cites no
+    // numbers, so an unreviewed copy is safe.
+    if zh {
+        format!(
+            "你好 {customer},\n\n我是 {venture} 的负责人。{service}——如果这正是你们现在需要的,我很乐意约个简短的通话,聊聊你们的目标和时间安排。\n\n期待回音。\n\n(本地起草助手草拟 · 未保存 · 请审阅后再使用)",
+            customer = customer.name,
+            venture = venture.name,
+            service = venture.service,
+        )
+    } else {
+        format!(
+            "Hi {customer},\n\nI'm the founder of {venture}. {service} — if that's useful to you right now, I'd be glad to set up a short call to understand your goals and timeline.\n\nLooking forward to hearing from you.\n\n(drafted by the local assistant · not saved · review before use)",
+            customer = customer.name,
+            venture = venture.name,
+            service = venture.service,
+        )
+    }
+}
+
 fn render_document(
     kind: DocumentKind,
     venture: &Venture,
@@ -1165,5 +1276,33 @@ mod tests {
         assert_eq!(export["format"], "sovereign-founder-os-export");
         assert_eq!(export["audit_chain_verified"], true);
         assert_eq!(export["workspace"]["venture"]["name"], "Acme");
+    }
+
+    #[test]
+    fn draft_assistant_never_touches_authoritative_state() {
+        let (_dir, store) = store();
+        store.set_venture("Acme", "Landing pages").unwrap();
+        let workspace = store.add_customer("Dr. Tan", "").unwrap();
+        let customer_id = workspace.customers[0].id;
+        let before = store.load().unwrap();
+
+        let suggestion = store.draft_assistant(customer_id, "en").unwrap();
+        assert!(!suggestion.saved);
+        assert_eq!(suggestion.provider_trust, "local");
+        assert!(suggestion.text.contains("Dr. Tan"));
+
+        // The graph is byte-for-byte unchanged: the suggestion created nothing.
+        let after = store.load().unwrap();
+        assert_eq!(
+            serde_json::to_value(&before).unwrap(),
+            serde_json::to_value(&after).unwrap()
+        );
+        assert!(after.documents.is_empty());
+
+        // Only a disclosure event was recorded.
+        let device = DeviceIdentity::load(&_dir.path().join("device.json")).unwrap();
+        let ledger =
+            AuditLedger::load(&_dir.path().join("ledger.json"), device.public_key_b64()).unwrap();
+        assert_eq!(ledger.events().last().unwrap().action, "model.drafted");
     }
 }

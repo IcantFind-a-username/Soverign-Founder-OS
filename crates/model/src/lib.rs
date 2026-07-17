@@ -280,6 +280,19 @@ impl DeterministicProvider {
         }
     }
 
+    /// A local provider that returns the request prompt verbatim. Used when
+    /// the caller has already composed the draft deterministically and wants
+    /// the gateway only for resilient routing and disclosure recording.
+    pub fn local_echo(id: impl Into<String>, health: Health) -> Self {
+        Self {
+            id: id.into(),
+            trust: ProviderTrust::Local,
+            health,
+            fail_on_call: false,
+            template: echo_template,
+        }
+    }
+
     pub fn cloud(id: impl Into<String>, health: Health) -> Self {
         Self {
             id: id.into(),
@@ -294,6 +307,10 @@ impl DeterministicProvider {
         self.fail_on_call = true;
         self
     }
+}
+
+fn echo_template(request: &ModelRequest, _provider_id: &str) -> String {
+    request.prompt.clone()
 }
 
 fn default_template(request: &ModelRequest, provider_id: &str) -> String {

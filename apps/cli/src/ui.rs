@@ -106,6 +106,10 @@ fn route(request: &mut tiny_http::Request, port: u16, root: &Path) -> UiResponse
             Ok(_) => json_response(&gauntlet_json()),
             Err(error) => bad_request(&error),
         },
+        (Method::Post, "/api/workspace/assist") => match read_json_body(request) {
+            Ok(body) => json_response(&workspace_assist(&body, root)),
+            Err(error) => bad_request(&error),
+        },
         (Method::Post, path) if path.starts_with("/api/workspace/") => {
             match read_json_body(request) {
                 Ok(body) => json_response(&workspace_post(path, &body, root)),
@@ -213,6 +217,17 @@ fn workspace_post(path: &str, body: &serde_json::Value, root: &Path) -> serde_js
     })();
     match result {
         Ok(state) => serde_json::json!({ "ok": true, "workspace": state }),
+        Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
+    }
+}
+
+fn workspace_assist(body: &serde_json::Value, root: &Path) -> serde_json::Value {
+    let result = (|| {
+        let store = workspace::Store::open(root)?;
+        store.draft_assistant(uuid_field(body, "customer_id")?, lang_field(body))
+    })();
+    match result {
+        Ok(suggestion) => serde_json::json!({ "ok": true, "suggestion": suggestion }),
         Err(error) => serde_json::json!({ "ok": false, "error": error.to_string() }),
     }
 }

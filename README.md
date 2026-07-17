@@ -186,9 +186,12 @@ tampering) — every denial is a real enforcement path, not a mock.
 
 - **Workspace** — the first usable product slice: create your company profile,
   add customers, generate offer and invoice drafts (local templates, no model),
-  request to send a document — which always stops in the Approval Center for
-  the human owner — and export every byte of your business state as one JSON
-  file. State lives in the encrypted vault; every change passes the policy
+  ask the local drafting assistant (deterministic, not an LLM, routed through
+  the resilient model gateway) to suggest outreach text — a suggestion that is
+  never saved to authoritative state and whose only footprint is an audited
+  disclosure — request to send a document (which always stops in the Approval
+  Center for the human owner), and export every byte of your business state as
+  one JSON file. State lives in the encrypted vault; every change passes the policy
   engine and appends a signed audit event. Approving a send only records the
   decision: Stage 1 performs no external effects.
 - **Security Center** — device identity, vault entries, admitted plugins
