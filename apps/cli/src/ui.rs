@@ -241,6 +241,7 @@ fn workspace_post(path: &str, body: &serde_json::Value, root: &Path) -> serde_js
             }
             "/api/workspace/customer" => store.add_customer(
                 str_field(body, "name")?,
+                body.get("email").and_then(|v| v.as_str()).unwrap_or(""),
                 body.get("notes").and_then(|v| v.as_str()).unwrap_or(""),
             ),
             "/api/workspace/offer" => store.create_document(

@@ -203,8 +203,11 @@ tampering) — every denial is a real enforcement path, not a mock.
   signed it, and full re-computation of the signed chain). State lives in the
   encrypted vault; every change passes the policy engine and appends a signed
   audit event. Approving a send authorizes one exact sandboxed execution that
-  writes the document to a local `outbox/` file (a real, audited host effect)
-  and records the signed evidence; Stage 1 performs no *network* effects —
+  composes the document into a well-formed RFC 5322 email and writes it to a
+  local `outbox/*.eml` file (a real, audited host effect) — addressed to the
+  customer's email if set, otherwise an RFC 2606 placeholder, and always marked
+  "composed locally, not transmitted" — and records the signed evidence;
+  Stage 1 performs no *network* effects —
   nothing leaves the device.
 - **Security Center** — device identity, vault entries, admitted plugins
   (verified from the content-addressed store), the signed audit chain, and a

@@ -97,6 +97,12 @@ pub struct Venture {
 pub struct Customer {
     pub id: Uuid,
     pub name: String,
+    /// Optional contact address. When present, a composed outreach email
+    /// addresses it directly; when empty, the email uses an RFC 2606
+    /// placeholder the founder must replace before sending. Defaulted so
+    /// vaults written before this field deserialize unchanged.
+    #[serde(default)]
+    pub email: String,
     pub notes: String,
     pub created_at: i64,
 }
@@ -405,8 +411,14 @@ impl Store {
         Ok(workspace)
     }
 
-    pub fn add_customer(&self, name: &str, notes: &str) -> Result<Workspace, WorkspaceError> {
+    pub fn add_customer(
+        &self,
+        name: &str,
+        email: &str,
+        notes: &str,
+    ) -> Result<Workspace, WorkspaceError> {
         let name = clean_text("name", name)?;
+        let email = clean_email(email)?;
         let notes = clean_optional_text("notes", notes)?;
         let (allowed, _, reason) = self.check_policy(
             "workspace",
@@ -425,6 +437,7 @@ impl Store {
         let customer = Customer {
             id: Uuid::new_v4(),
             name: name.clone(),
+            email,
             notes,
             created_at: now(),
         };
@@ -648,7 +661,12 @@ impl Store {
             .ok_or_else(|| WorkspaceError::NotFound("document".into()))?;
 
         let evidence = if approve {
-            Some(self.execute_signed_approval(&document)?)
+            let customer = workspace
+                .customers
+                .iter()
+                .find(|customer| customer.id == document.customer_id);
+            let message = compose_email(workspace.venture.as_ref(), customer, &document);
+            Some(self.execute_signed_approval(&document, message.as_bytes())?)
         } else {
             None
         };
@@ -735,6 +753,7 @@ impl Store {
     fn execute_signed_approval(
         &self,
         document: &Document,
+        delivery: &[u8],
     ) -> Result<SignedApprovalRecord, WorkspaceError> {
         let approval_secret = self.owner_secret("owner_approval_key")?;
         let authority_secret = self.owner_secret("runtime_authority_key")?;
@@ -941,16 +960,17 @@ impl Store {
             .map_err(kernel)?;
 
         // The first real host effect: with the whole chain verified and the
-        // capability durably consumed, write the approved document to the
-        // owner's local outbox. This is audited and revocable; delivery to the
+        // capability durably consumed, write the composed outreach message to
+        // the owner's local outbox as an RFC 5322 `.eml`. This is audited and
+        // revocable; the message is composed, not transmitted — delivery to the
         // customer remains the founder's own action.
         let outbox =
             sovereign_effects::OutboxBroker::open(self.root.join("outbox")).map_err(kernel)?;
         let receipt = outbox
-            .write_document(
+            .write_message(
                 &document.id.simple().to_string(),
                 sovereign_effects::EffectDataClass::Amber,
-                document.body.as_bytes(),
+                delivery,
             )
             .map_err(kernel)?;
 
@@ -1390,6 +1410,115 @@ fn clean_optional_text(field: &str, value: &str) -> Result<String, WorkspaceErro
     Ok(value.to_owned())
 }
 
+/// Compose a well-formed RFC 5322 message for an approved document. The result
+/// is written to the local outbox and never transmitted — an `X-Sovereign`
+/// header says so, and a missing recipient becomes an RFC 2606 `.invalid`
+/// placeholder the founder must replace before sending. Header values come from
+/// validated fields (names carry no control characters, emails no CR/LF or
+/// separators), and are re-sanitized here, so no field can inject a header.
+fn compose_email(
+    venture: Option<&Venture>,
+    customer: Option<&Customer>,
+    document: &Document,
+) -> String {
+    let sender_name = venture
+        .map(|venture| venture.name.as_str())
+        .unwrap_or("Sovereign Founder");
+    let recipient_name = customer
+        .map(|customer| customer.name.as_str())
+        .unwrap_or("Customer");
+    let recipient_addr = customer
+        .map(|customer| customer.email.trim())
+        .filter(|email| !email.is_empty())
+        .map(|email| email.to_owned())
+        .unwrap_or_else(|| "recipient@example.invalid".to_owned());
+    let placeholder = recipient_addr.ends_with(".invalid");
+
+    let mut message = String::new();
+    message.push_str(&format!(
+        "From: {} <founder@example.invalid>\r\n",
+        encode_display_name(sender_name)
+    ));
+    message.push_str(&format!(
+        "To: {} <{}>\r\n",
+        encode_display_name(recipient_name),
+        header_safe(&recipient_addr)
+    ));
+    message.push_str(&format!("Subject: {}\r\n", header_safe(&document.title)));
+    message.push_str(&format!("Date: {}\r\n", chrono::Utc::now().to_rfc2822()));
+    message.push_str(&format!(
+        "Message-ID: <{}@sovereign-founder-os.invalid>\r\n",
+        document.id.simple()
+    ));
+    message.push_str("MIME-Version: 1.0\r\n");
+    message.push_str("Content-Type: text/plain; charset=utf-8\r\n");
+    message.push_str(
+        "X-Sovereign-Composed: composed locally by Sovereign Founder OS; not transmitted\r\n",
+    );
+    if placeholder {
+        message.push_str(
+            "X-Sovereign-Note: recipient address is a placeholder — set the customer's email before sending\r\n",
+        );
+    }
+    message.push_str("\r\n");
+    for line in document.body.split('\n') {
+        message.push_str(line.trim_end_matches('\r'));
+        message.push_str("\r\n");
+    }
+    message
+}
+
+/// Render an RFC 5322 display-name: kept bare when it is a safe atom, otherwise
+/// a quoted-string with `\\` and `"` escaped. CR/LF are stripped defensively.
+fn encode_display_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .filter(|ch| *ch != '\r' && *ch != '\n')
+        .collect();
+    let needs_quoting = sanitized.is_empty()
+        || sanitized
+            .chars()
+            .any(|ch| !(ch.is_ascii_alphanumeric() || " !#$%&'*+-/=?^_`{|}~".contains(ch)));
+    if needs_quoting {
+        let escaped = sanitized.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{escaped}\"")
+    } else {
+        sanitized
+    }
+}
+
+/// Collapse any CR/LF in a single-line header value to spaces — defense in
+/// depth against header injection on top of upstream field validation.
+fn header_safe(value: &str) -> String {
+    value.replace(['\r', '\n'], " ")
+}
+
+/// Validate an optional contact email. Empty is allowed (the founder can add
+/// it later). A non-empty value must be a single-line, single-`@` address with
+/// no spaces or header-injection characters — enough to place safely in an
+/// RFC 5322 `To:` header without claiming full RFC 5321 validation.
+fn clean_email(value: &str) -> Result<String, WorkspaceError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(String::new());
+    }
+    if value.len() > 254 {
+        return Err(WorkspaceError::Invalid("email is too long".into()));
+    }
+    let at_count = value.bytes().filter(|byte| *byte == b'@').count();
+    let structural =
+        at_count == 1 && !value.starts_with('@') && !value.ends_with('@') && value.contains('.');
+    let no_injection = value
+        .bytes()
+        .all(|byte| !byte.is_ascii_control() && !matches!(byte, b' ' | b'\t' | b',' | b'<' | b'>'));
+    if !structural || !no_injection {
+        return Err(WorkspaceError::Invalid(
+            "email is not a valid address".into(),
+        ));
+    }
+    Ok(value.to_owned())
+}
+
 fn now() -> i64 {
     chrono::Utc::now().timestamp()
 }
@@ -1415,7 +1544,9 @@ mod tests {
         store
             .set_venture("Acme Consulting", "Landing pages for clinics")
             .unwrap();
-        let workspace = store.add_customer("Dr. Tan", "met at expo").unwrap();
+        let workspace = store
+            .add_customer("Dr. Tan", "dr.tan@example.com", "met at expo")
+            .unwrap();
         let customer_id = workspace.customers[0].id;
 
         let workspace = store
@@ -1477,23 +1608,93 @@ mod tests {
         ));
 
         // The real host effect happened: the approved document is a genuine
-        // file in the local outbox, matching the receipt.
+        // file in the local outbox, matching the receipt. It is a composed
+        // RFC 5322 message (.eml): real headers, the recipient's address, the
+        // document body, and an explicit "not transmitted" marker.
         let outbox_receipt = evidence.outbox.as_ref().unwrap();
+        assert!(outbox_receipt.relative_path.ends_with(".eml"));
         let written = std::fs::read(
             dir.path()
                 .join("outbox")
                 .join(&outbox_receipt.relative_path),
         )
         .unwrap();
-        assert_eq!(written, workspace.documents[0].body.as_bytes());
+        let message = String::from_utf8(written.clone()).unwrap();
+        assert!(message.contains("To: \"Dr. Tan\" <dr.tan@example.com>"));
+        assert!(message.contains("Subject: "));
+        assert!(message.contains("X-Sovereign-Composed:"));
+        // The body is present (line endings are normalized to CRLF in the .eml,
+        // so match on a body line rather than the raw string).
+        let body_line = workspace.documents[0].body.lines().next().unwrap();
+        assert!(message.contains(body_line));
+        // A real recipient means no placeholder note.
+        assert!(!message.contains("placeholder"));
         assert_eq!(outbox_receipt.bytes, written.len());
+    }
+
+    #[test]
+    fn compose_email_is_wellformed_and_injection_safe() {
+        let venture = Venture {
+            name: "Acme".into(),
+            service: "Landing pages".into(),
+            updated_at: 0,
+        };
+        let document = Document {
+            id: Uuid::new_v4(),
+            kind: DocumentKind::Offer,
+            customer_id: Uuid::new_v4(),
+            title: "Offer — Acme".into(),
+            body: "Hello,\nHere is the offer.\n".into(),
+            amount_cents: None,
+            status: DocumentStatus::PendingApproval,
+            created_at: 0,
+        };
+
+        // With a real address the To header resolves and there is no placeholder.
+        let with_email = Customer {
+            id: document.customer_id,
+            name: "Dr. Tan".into(),
+            email: "dr.tan@example.com".into(),
+            notes: String::new(),
+            created_at: 0,
+        };
+        let message = compose_email(Some(&venture), Some(&with_email), &document);
+        assert!(message.contains("From: Acme <founder@example.invalid>"));
+        assert!(message.contains("To: \"Dr. Tan\" <dr.tan@example.com>"));
+        assert!(message.contains("Subject: Offer — Acme"));
+        assert!(message.contains("Message-ID: <"));
+        assert!(message.contains("X-Sovereign-Composed:"));
+        assert!(!message.contains("placeholder"));
+        assert!(message.contains("Here is the offer."));
+        // Headers are CRLF-separated and end before the body.
+        assert!(message.contains("\r\n\r\n"));
+
+        // With no address the recipient is an RFC 2606 placeholder, flagged.
+        let no_email = Customer {
+            email: String::new(),
+            ..with_email.clone()
+        };
+        let message = compose_email(Some(&venture), Some(&no_email), &document);
+        assert!(message.contains("<recipient@example.invalid>"));
+        assert!(message.contains("X-Sovereign-Note: recipient address is a placeholder"));
+
+        // A hostile display name cannot inject headers: it is quoted/stripped,
+        // never allowed to introduce a bare CRLF + header.
+        let hostile = Customer {
+            name: "Bad\r\nBcc: victim@example.com".into(),
+            email: "x@example.com".into(),
+            ..with_email.clone()
+        };
+        let message = compose_email(Some(&venture), Some(&hostile), &document);
+        let header_block = message.split("\r\n\r\n").next().unwrap();
+        assert!(!header_block.to_ascii_lowercase().contains("\r\nbcc:"));
     }
 
     #[test]
     fn double_decision_and_unknown_ids_fail_closed() {
         let (_dir, store) = store();
         store.set_venture("Acme", "Service").unwrap();
-        let workspace = store.add_customer("Customer", "").unwrap();
+        let workspace = store.add_customer("Customer", "", "").unwrap();
         let customer_id = workspace.customers[0].id;
         let workspace = store
             .create_document(DocumentKind::Offer, customer_id, None, "zh")
@@ -1547,7 +1748,7 @@ mod tests {
     fn draft_assistant_never_touches_authoritative_state() {
         let (_dir, store) = store();
         store.set_venture("Acme", "Landing pages").unwrap();
-        let workspace = store.add_customer("Dr. Tan", "").unwrap();
+        let workspace = store.add_customer("Dr. Tan", "", "").unwrap();
         let customer_id = workspace.customers[0].id;
         let before = store.load().unwrap();
 
@@ -1575,7 +1776,7 @@ mod tests {
     fn verify_export_accepts_genuine_bundle_and_rejects_tampering() {
         let (_dir, store) = store();
         store.set_venture("Acme", "Landing pages").unwrap();
-        let workspace = store.add_customer("Dr. Tan", "expo").unwrap();
+        let workspace = store.add_customer("Dr. Tan", "", "expo").unwrap();
         let customer_id = workspace.customers[0].id;
         let workspace = store
             .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
@@ -1633,7 +1834,7 @@ mod tests {
     fn command_center_aggregates_state_and_evidence_read_only() {
         let (_dir, store) = store();
         store.set_venture("Acme", "Landing pages").unwrap();
-        let workspace = store.add_customer("Dr. Tan", "").unwrap();
+        let workspace = store.add_customer("Dr. Tan", "", "").unwrap();
         let customer_id = workspace.customers[0].id;
         let workspace = store
             .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
