@@ -17,6 +17,7 @@ sovereign-audit-ledger = { workspace = true }
 sovereign-authority = { workspace = true }
 sovereign-capability = { workspace = true }
 sovereign-contracts = { workspace = true }
+sovereign-execution = { workspace = true }
 sovereign-identity = { workspace = true }
 sovereign-policy = { workspace = true }
 sovereign-sandbox = { workspace = true }

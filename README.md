@@ -150,6 +150,7 @@ crates/
   artifact/       signed manifests, exact invocation preparation, local admission store
   audit-ledger/   append-only signed event log
   authority/      durable cross-process one-use consumption (tokens, approvals, idempotency)
+  execution/      crash-safe execution journal (durable intent, Indeterminate recovery)
   policy/         deterministic permission engine
   capability/     legacy V1 and exact-bound Capability V2 tokens
   vault/          local encrypted storage

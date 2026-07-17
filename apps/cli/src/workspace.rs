@@ -733,8 +733,12 @@ impl Store {
             sovereign_authority::AuthorityStore::open(self.root.join("authority"))
                 .map_err(kernel)?,
         );
-        let mut executor =
-            VerifiedSandboxExecutor::new(vec![selector], validator).map_err(kernel)?;
+        let mut executor = VerifiedSandboxExecutor::new(vec![selector], validator)
+            .map_err(kernel)?
+            .with_execution_journal(
+                sovereign_execution::ExecutionJournal::open(self.root.join("executions"))
+                    .map_err(kernel)?,
+            );
         let result = executor
             .execute_approved(
                 VerifiedExecutionRequest {
@@ -1037,6 +1041,18 @@ mod tests {
             ]
         );
         ledger.verify_chain().unwrap();
+
+        // The approval's sandboxed step left crash-safe execution evidence:
+        // one completed record in the durable journal.
+        let recovered = sovereign_execution::ExecutionJournal::open(dir.path().join("executions"))
+            .unwrap()
+            .recover()
+            .unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert!(matches!(
+            recovered[0].state,
+            sovereign_execution::ExecutionState::Completed { .. }
+        ));
     }
 
     #[test]

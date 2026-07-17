@@ -59,7 +59,8 @@ Sovereign Runtime secure kernel
     - [ ] Component/WIT input ABI
   - [ ] Phase C: durable authorization and crash-safe evidence
     - [x] Durable Authority Store: atomic cross-process one-use consumption of tokens, approvals, and idempotency keys
-    - [ ] Crash-safe audit intent/result ordering and execution receipts
+    - [x] Crash-safe execution journal: durable intent before consume, terminal result after, Indeterminate recovery
+    - [ ] Crash-safe signed-audit intent/result ordering (ledger migration) and execution receipts
   - [ ] Phase D: reviewed WIT host interfaces and high-risk backend
 - [ ] Adversarial integration tests
   - [x] Phase A: malicious Wasm import, loop, memory, table, ABI, and state tests

@@ -323,6 +323,8 @@ ExecutionRequested (hashes only)
 
 Each external host effect has its own durable intent before the effect. If intent evidence cannot be persisted, execution is denied. If the external effect may have occurred but result evidence cannot be persisted, the outcome is `Indeterminate` and automatic retry is forbidden.
 
+The `sovereign-execution` crate implements this ordering for the verified executor: a per-execution append-only journal records intent (hashes only) and flushes it before the capability is consumed, records `ExecutionStarted` after consumption, and records a terminal `Completed`/`Failed` verdict after the guest returns. A crash between intent and terminal record recovers as `Indeterminate`, and recovery only reports state — it never re-executes. This journal is lifecycle evidence for the pure-compute path; migrating the signed audit ledger to the COSE audit role and binding host-effect intent to it remain Phase C work.
+
 Evidence includes execution and idempotency IDs, policy/token/approval IDs, artifact and invocation digests, runtime configuration digest, resource-use metrics, host effects, result hash, and stable failure codes.
 
 ## Stable Failure Classes

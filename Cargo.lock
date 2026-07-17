@@ -1432,6 +1432,7 @@ dependencies = [
  "sovereign-authority",
  "sovereign-capability",
  "sovereign-contracts",
+ "sovereign-execution",
  "sovereign-identity",
  "sovereign-policy",
  "sovereign-sandbox",
@@ -1450,6 +1451,17 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "sovereign-execution"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
  "uuid",
 ]
 
@@ -1492,8 +1504,10 @@ dependencies = [
  "sovereign-artifact",
  "sovereign-capability",
  "sovereign-contracts",
+ "sovereign-execution",
  "sovereign-identity",
  "sovereign-policy",
+ "tempfile",
  "thiserror 2.0.18",
  "uuid",
  "wasmtime",
