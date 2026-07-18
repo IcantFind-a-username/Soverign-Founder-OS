@@ -207,6 +207,29 @@ pub struct DraftSuggestion {
     pub saved: bool,
 }
 
+/// A durable, owner-visible record of one time a model provider was given
+/// customer data. The product's promise is sovereignty over that data, so the
+/// founder gets a plain-language log of exactly what happened: which provider,
+/// how much it trusts the machine it ran on, whether the data stayed local, and
+/// which providers were skipped on the way there. This mirrors the signed
+/// `model.drafted` audit event, but keeps the human-readable detail (the event
+/// stores only a hash of it) so the log is legible without the export tooling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelDisclosure {
+    pub id: Uuid,
+    pub at: i64,
+    pub customer_id: Uuid,
+    pub task: String,
+    pub provider_id: String,
+    pub provider_trust: String,
+    /// True when the provider ran locally and the data never left the machine.
+    pub stayed_local: bool,
+    pub data_class: String,
+    pub output_chars: usize,
+    /// Providers skipped before this one answered (health-aware failover).
+    pub failover_from: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Workspace {
     pub version: u32,
@@ -214,6 +237,10 @@ pub struct Workspace {
     pub customers: Vec<Customer>,
     pub documents: Vec<Document>,
     pub approvals: Vec<Approval>,
+    /// Every time a model provider was shown customer data. Append-only in
+    /// practice; `default` keeps vaults written before this field loadable.
+    #[serde(default)]
+    pub disclosures: Vec<ModelDisclosure>,
 }
 
 /// At-a-glance product view: the founder's whole business plus the security
@@ -584,6 +611,31 @@ impl Store {
             })
             .map_err(|error| WorkspaceError::Invalid(format!("drafting assistant: {error}")))?;
 
+        let provider_trust = format!("{:?}", disclosure.provider_trust).to_lowercase();
+        let failover_from: Vec<String> = disclosure
+            .skipped
+            .iter()
+            .map(|entry| entry.provider_id.clone())
+            .collect();
+
+        // Persist the disclosure to the owner-visible log — never the
+        // suggestion itself, only the fact that a provider saw the data.
+        let entry = ModelDisclosure {
+            id: Uuid::new_v4(),
+            at: now(),
+            customer_id,
+            task: disclosure.task.clone(),
+            provider_id: disclosure.provider_id.clone(),
+            stayed_local: provider_trust == "local",
+            provider_trust: provider_trust.clone(),
+            data_class: "amber".into(),
+            output_chars: disclosure.output_chars,
+            failover_from: failover_from.clone(),
+        };
+        let mut persisted = self.load()?;
+        persisted.disclosures.push(entry);
+        self.save(&persisted)?;
+
         // Record only the disclosure — never the suggestion — as evidence.
         self.record(
             "model.drafted",
@@ -591,14 +643,10 @@ impl Store {
             serde_json::json!({
                 "task": disclosure.task,
                 "provider": disclosure.provider_id,
-                "provider_trust": format!("{:?}", disclosure.provider_trust).to_lowercase(),
+                "provider_trust": provider_trust,
                 "data_class": "amber",
                 "output_chars": disclosure.output_chars,
-                "failover_from": disclosure
-                    .skipped
-                    .iter()
-                    .map(|entry| entry.provider_id.clone())
-                    .collect::<Vec<_>>(),
+                "failover_from": failover_from,
             }),
         )?;
 
@@ -2150,6 +2198,50 @@ mod tests {
     }
 
     #[test]
+    fn draft_assistant_records_a_persistent_data_disclosure() {
+        let (dir, store) = store();
+        store.set_venture("Acme", "Landing pages").unwrap();
+        let workspace = store
+            .add_customer("Dr. Tan", "dr.tan@example.com", "")
+            .unwrap();
+        let customer_id = workspace.customers[0].id;
+
+        // The suggestion is powerless, but the disclosure is durable.
+        let suggestion = store.draft_assistant(customer_id, "en").unwrap();
+        assert!(
+            !suggestion.saved,
+            "a suggestion is never authoritative state"
+        );
+
+        let workspace = store.load().unwrap();
+        assert_eq!(workspace.disclosures.len(), 1);
+        let disclosure = &workspace.disclosures[0];
+        assert_eq!(disclosure.customer_id, customer_id);
+        assert_eq!(disclosure.data_class, "amber");
+        assert!(
+            disclosure.stayed_local && disclosure.provider_trust == "local",
+            "Amber customer data must stay on this machine"
+        );
+        assert!(disclosure.output_chars > 0);
+
+        // The persisted log mirrors a signed model.drafted event on the chain —
+        // detail in state, tamper-evidence on the ledger.
+        let device = DeviceIdentity::load(&dir.path().join("device.json")).unwrap();
+        let ledger =
+            AuditLedger::load(&dir.path().join("ledger.json"), device.public_key_b64()).unwrap();
+        ledger.verify_chain().unwrap();
+        assert!(ledger
+            .events()
+            .iter()
+            .any(|event| event.action == "model.drafted"
+                && event.resource == format!("customer:{customer_id}")));
+
+        // A second call appends rather than replaces: the log is a history.
+        store.draft_assistant(customer_id, "zh").unwrap();
+        assert_eq!(store.load().unwrap().disclosures.len(), 2);
+    }
+
+    #[test]
     fn compose_email_is_wellformed_and_injection_safe() {
         let venture = Venture {
             name: "Acme".into(),
@@ -2262,7 +2354,7 @@ mod tests {
     }
 
     #[test]
-    fn draft_assistant_never_touches_authoritative_state() {
+    fn draft_assistant_never_touches_authoritative_business_state() {
         let (_dir, store) = store();
         store.set_venture("Acme", "Landing pages").unwrap();
         let workspace = store.add_customer("Dr. Tan", "", "").unwrap();
@@ -2274,15 +2366,29 @@ mod tests {
         assert_eq!(suggestion.provider_trust, "local");
         assert!(suggestion.text.contains("Dr. Tan"));
 
-        // The graph is byte-for-byte unchanged: the suggestion created nothing.
         let after = store.load().unwrap();
-        assert_eq!(
-            serde_json::to_value(&before).unwrap(),
-            serde_json::to_value(&after).unwrap()
-        );
+        // The untrusted suggestion is powerless: the business graph — venture,
+        // customers, documents, approvals — is byte-for-byte unchanged, and the
+        // suggestion text is never persisted anywhere in state.
+        let business = |workspace: &Workspace| {
+            serde_json::json!({
+                "venture": workspace.venture,
+                "customers": workspace.customers,
+                "documents": workspace.documents,
+                "approvals": workspace.approvals,
+            })
+        };
+        assert_eq!(business(&before), business(&after));
         assert!(after.documents.is_empty());
+        let serialized = serde_json::to_string(&after).unwrap();
+        assert!(
+            !serialized.contains(&suggestion.text),
+            "the model suggestion must never be written to authoritative state"
+        );
 
-        // Only a disclosure event was recorded.
+        // The only durable change is an append to the owner-visible disclosure
+        // log, mirrored by exactly one signed model.drafted event.
+        assert_eq!(after.disclosures.len(), 1);
         let device = DeviceIdentity::load(&_dir.path().join("device.json")).unwrap();
         let ledger =
             AuditLedger::load(&_dir.path().join("ledger.json"), device.public_key_b64()).unwrap();

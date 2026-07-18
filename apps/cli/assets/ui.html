@@ -243,6 +243,12 @@
   </section>
 
   <section>
+    <h2 data-i18n="sec_disclosures"></h2>
+    <div class="honest" data-i18n="sec_disclosures_note"></div>
+    <div class="panel"><div id="disclosures" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
     <h2 data-i18n="sec_plugins"></h2>
     <div class="panel"><div id="plugins" class="empty" data-i18n="loading"></div></div>
   </section>
@@ -359,6 +365,11 @@ const STRINGS = {
     sec_integrity_note: "Binds your authoritative state to the tamper-evident ledger. It re-verifies the signed chain, then confirms every approved, revoked, or delivered document — and every customer — has the signed event that should back it. It proves signed evidence exists for a state, not that a field's value is unchanged.",
     integrity_ok: "verified", integrity_bad: "divergence found",
     integrity_summary: (chain, n) => (chain ? "signed chain re-verified" : "signed chain FAILED") + " · " + n + " events reconciled against state",
+    sec_disclosures: "Data disclosures — every time a model saw your customer data",
+    sec_disclosures_note: "Your right to know who processed your data. Each row is one call to the drafting assistant: which provider answered, whether the data stayed on this machine, and which providers were skipped on the way. The suggestion itself is never stored — only the disclosure.",
+    disclosures_empty: "No model has been shown customer data yet.",
+    th_provider: "Provider", th_where: "Where", th_class: "Data class", th_failover: "Skipped",
+    stayed_local: "stayed local", left_device: "left device",
     sec_plugins: "Admitted plugins — content-addressed store",
     sec_ledger: "Audit trail — signed hash chain (latest 25)",
     sec_gauntlet: "Security gauntlet — real attacks, run now, in memory",
@@ -470,6 +481,11 @@ const STRINGS = {
     sec_integrity_note: "将你的权威状态与防篡改账本绑定。它会重新验证签名链,然后确认每一份已批准、已撤销或已送达的文档,以及每一位客户,都有应有的签名事件作为支撑。它证明某个状态存在签名证据,而非证明字段值未被改动。",
     integrity_ok: "已验证", integrity_bad: "发现偏差",
     integrity_summary: (chain, n) => (chain ? "签名链已重新验证" : "签名链验证失败") + " · 已对照状态核对 " + n + " 条事件",
+    sec_disclosures: "数据披露 —— 每一次模型接触你的客户数据",
+    sec_disclosures_note: "你有权知道谁处理了你的数据。每一行对应一次调用起草助手:哪个提供方作出应答、数据是否留在本机、以及沿途跳过了哪些提供方。建议内容本身从不存储 —— 只记录披露事实。",
+    disclosures_empty: "尚无模型接触过客户数据。",
+    th_provider: "提供方", th_where: "位置", th_class: "数据分级", th_failover: "已跳过",
+    stayed_local: "留在本机", left_device: "离开本机",
     sec_plugins: "已准入插件 — 内容寻址存储",
     sec_ledger: "审计记录 — 签名哈希链(最近 25 条)",
     sec_gauntlet: "安全闯关 — 真实攻击,即刻在内存中运行",
@@ -738,6 +754,24 @@ function renderState() {
     wrap.classList.remove("empty");
     integrity.replaceChildren(wrap);
     integrity.classList.remove("empty");
+  }
+
+  const disclosures = $("disclosures");
+  const dl = state.disclosures || [];
+  if (!dl.length) {
+    disclosures.replaceChildren(el("div", "empty", t("disclosures_empty")));
+  } else {
+    disclosures.replaceChildren(table(
+      [t("th_time"), t("th_customer"), t("th_provider"), t("th_where"), t("th_class"), t("th_failover")],
+      dl.map(d => [
+        new Date(d.at * 1000).toLocaleString(locale()),
+        d.customer,
+        d.provider + " (" + d.provider_trust + ")",
+        d.stayed_local ? badge("good", t("stayed_local")) : badge("warn", t("left_device")),
+        d.data_class,
+        d.failover_from.length ? d.failover_from.join(", ") : "—",
+      ])));
+    disclosures.classList.remove("empty");
   }
 
   const plugins = $("plugins");

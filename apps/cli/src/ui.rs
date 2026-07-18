@@ -416,9 +416,49 @@ fn state_json(root: &Path) -> serde_json::Value {
         "vault_entries": vault_entries,
         "ledger": ledger,
         "integrity": integrity_json(root),
+        "disclosures": disclosures_json(root),
         "plugins": admitted_plugins_json(root),
         "stage": "Stage 1 · Secure Kernel · Founder Command Center (early)",
     })
+}
+
+/// The owner-visible data-disclosure log for the Security Center: every time a
+/// model provider was shown customer data, newest first. Never the suggestion,
+/// only the disclosure. Silent on error rather than inventing a clean log.
+fn disclosures_json(root: &Path) -> serde_json::Value {
+    let workspace = match workspace::Store::open(root).and_then(|store| store.load()) {
+        Ok(workspace) => workspace,
+        Err(_) => return serde_json::json!([]),
+    };
+    let named = |id| {
+        workspace
+            .customers
+            .iter()
+            .find(|customer| customer.id == id)
+            .map(|customer| customer.name.clone())
+            .unwrap_or_else(|| "(unknown)".into())
+    };
+    let mut entries: Vec<serde_json::Value> = workspace
+        .disclosures
+        .iter()
+        .rev()
+        .take(50)
+        .map(|disclosure| {
+            serde_json::json!({
+                "at": disclosure.at,
+                "customer": named(disclosure.customer_id),
+                "task": disclosure.task,
+                "provider": disclosure.provider_id,
+                "provider_trust": disclosure.provider_trust,
+                "stayed_local": disclosure.stayed_local,
+                "data_class": disclosure.data_class,
+                "output_chars": disclosure.output_chars,
+                "failover_from": disclosure.failover_from,
+            })
+        })
+        .collect();
+    entries.truncate(50);
+    serde_json::Value::Array(entries)
 }
 
 /// Self-audit for the Security Center: reconcile authoritative state against
