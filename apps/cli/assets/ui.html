@@ -237,6 +237,12 @@
   </div>
 
   <section>
+    <h2 data-i18n="sec_integrity"></h2>
+    <div class="honest" data-i18n="sec_integrity_note"></div>
+    <div class="panel"><div id="integrity" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
     <h2 data-i18n="sec_plugins"></h2>
     <div class="panel"><div id="plugins" class="empty" data-i18n="loading"></div></div>
   </section>
@@ -349,6 +355,10 @@ const STRINGS = {
     vault_meta: "encrypted at rest (AES-256-GCM)", plugins_meta: "owner-signed admission records",
     device_ready: "ready", device_none: "none", device_hint: "created automatically on first use",
     chain_ok: "chain verified", chain_broken: "CHAIN BROKEN", no_ledger_tile: "no ledger yet",
+    sec_integrity: "State integrity — self-audit against the signed chain",
+    sec_integrity_note: "Binds your authoritative state to the tamper-evident ledger. It re-verifies the signed chain, then confirms every approved, revoked, or delivered document — and every customer — has the signed event that should back it. It proves signed evidence exists for a state, not that a field's value is unchanged.",
+    integrity_ok: "verified", integrity_bad: "divergence found",
+    integrity_summary: (chain, n) => (chain ? "signed chain re-verified" : "signed chain FAILED") + " · " + n + " events reconciled against state",
     sec_plugins: "Admitted plugins — content-addressed store",
     sec_ledger: "Audit trail — signed hash chain (latest 25)",
     sec_gauntlet: "Security gauntlet — real attacks, run now, in memory",
@@ -456,6 +466,10 @@ const STRINGS = {
     vault_meta: "静态加密(AES-256-GCM)", plugins_meta: "所有者签名的准入记录",
     device_ready: "就绪", device_none: "未创建", device_hint: "首次使用时自动创建",
     chain_ok: "哈希链已验证", chain_broken: "哈希链已损坏", no_ledger_tile: "暂无账本",
+    sec_integrity: "状态完整性 — 对照签名链自我审计",
+    sec_integrity_note: "将你的权威状态与防篡改账本绑定。它会重新验证签名链,然后确认每一份已批准、已撤销或已送达的文档,以及每一位客户,都有应有的签名事件作为支撑。它证明某个状态存在签名证据,而非证明字段值未被改动。",
+    integrity_ok: "已验证", integrity_bad: "发现偏差",
+    integrity_summary: (chain, n) => (chain ? "签名链已重新验证" : "签名链验证失败") + " · 已对照状态核对 " + n + " 条事件",
     sec_plugins: "已准入插件 — 内容寻址存储",
     sec_ledger: "审计记录 — 签名哈希链(最近 25 条)",
     sec_gauntlet: "安全闯关 — 真实攻击,即刻在内存中运行",
@@ -703,6 +717,28 @@ function renderState() {
       : el("span", null, t("no_ledger_tile")));
   $("t-vault").textContent = state.vault_entries.length;
   $("t-plugins").textContent = state.plugins.length;
+
+  const integrity = $("integrity");
+  const ir = state.integrity;
+  if (!ir) {
+    integrity.replaceChildren(el("div", "empty", t("loading")));
+  } else {
+    const wrap = el("div", null);
+    const head = el("div", "gauntlet-row");
+    head.appendChild(badge(ir.ok ? "good" : "bad", ir.ok ? t("integrity_ok") : t("integrity_bad")));
+    head.appendChild(document.createTextNode(" " + t("integrity_summary")(ir.chain_verified, ir.events)));
+    wrap.appendChild(head);
+    if (ir.error) wrap.appendChild(el("div", "mono", ir.error));
+    (ir.findings || []).forEach(f => {
+      const row = el("div", "gauntlet-row");
+      row.appendChild(badge("bad", f.severity));
+      row.appendChild(el("div", "detail", f.resource + " — " + f.detail));
+      wrap.appendChild(row);
+    });
+    wrap.classList.remove("empty");
+    integrity.replaceChildren(wrap);
+    integrity.classList.remove("empty");
+  }
 
   const plugins = $("plugins");
   if (!state.plugins.length) {

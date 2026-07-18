@@ -415,9 +415,27 @@ fn state_json(root: &Path) -> serde_json::Value {
         "device_id": device_id,
         "vault_entries": vault_entries,
         "ledger": ledger,
+        "integrity": integrity_json(root),
         "plugins": admitted_plugins_json(root),
         "stage": "Stage 1 · Secure Kernel · Founder Command Center (early)",
     })
+}
+
+/// Self-audit for the Security Center: reconcile authoritative state against
+/// the signed audit chain. Reports the verdict and any divergence; on any
+/// internal error it reports that honestly rather than a false "ok".
+fn integrity_json(root: &Path) -> serde_json::Value {
+    match workspace::Store::open(root).and_then(|store| store.integrity_check()) {
+        Ok(report) => serde_json::to_value(report)
+            .unwrap_or_else(|_| serde_json::json!({ "ok": false, "error": "serialize" })),
+        Err(error) => serde_json::json!({
+            "ok": false,
+            "chain_verified": false,
+            "events": 0,
+            "findings": [],
+            "error": error.to_string(),
+        }),
+    }
 }
 
 /// List admission records from the on-disk store, verifying each record

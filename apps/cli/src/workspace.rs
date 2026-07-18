@@ -325,6 +325,41 @@ pub struct ExportVerification {
     pub notes: Vec<String>,
 }
 
+/// The result of reconciling authoritative state against the signed audit
+/// chain. `ok` is the honest bottom line: the chain verifies and every
+/// power-granting state has the signed evidence that should back it.
+#[derive(Debug, Clone, Serialize)]
+pub struct IntegrityReport {
+    /// The signed hash chain recomputed and every device signature checked.
+    pub chain_verified: bool,
+    /// Events on the verified chain.
+    pub events: usize,
+    /// True when `chain_verified` holds and there are no findings.
+    pub ok: bool,
+    /// Each divergence between state and the signed chain, never hidden.
+    pub findings: Vec<IntegrityFinding>,
+}
+
+/// One divergence between authoritative state and the signed audit chain.
+#[derive(Debug, Clone, Serialize)]
+pub struct IntegrityFinding {
+    pub severity: &'static str,
+    pub resource: String,
+    pub detail: String,
+}
+
+/// Short human label for a document status, for honest finding text.
+fn document_status_label(status: DocumentStatus) -> &'static str {
+    match status {
+        DocumentStatus::Draft => "a draft",
+        DocumentStatus::PendingApproval => "pending approval",
+        DocumentStatus::ApprovedPendingDelivery => "approved",
+        DocumentStatus::Rejected => "rejected",
+        DocumentStatus::Revoked => "revoked",
+        DocumentStatus::Delivered => "delivered",
+    }
+}
+
 /// Storage + evidence context for one workspace operation.
 pub struct Store {
     root: PathBuf,
@@ -1228,6 +1263,146 @@ impl Store {
         })
     }
 
+    /// Self-audit: reconcile the authoritative workspace state against the
+    /// signed audit chain and report every divergence.
+    ///
+    /// The audit ledger is tamper-evident for itself — `AuditLedger::load`
+    /// re-verifies the hash chain and every device signature — but the vault
+    /// that holds authoritative state is a *separate* file. Nothing otherwise
+    /// stops someone from hand-editing `workspace.json` to fabricate state
+    /// (flip a document to approved, invent a customer) without a matching
+    /// signed event. This check binds the two: it fails closed if the chain
+    /// does not verify, then confirms that every power-granting state has the
+    /// signed evidence that should exist for it. It is deliberately modest —
+    /// the ledger stores payload *hashes*, not payloads, so this proves that
+    /// signed evidence *exists* for a state, not that a field's value matches.
+    pub fn integrity_check(&self) -> Result<IntegrityReport, WorkspaceError> {
+        let workspace = self.load()?;
+        let ledger_path = self.root.join("ledger.json");
+
+        let (events, chain_verified, load_error) = if ledger_path.exists() {
+            match AuditLedger::load(&ledger_path, self.device.public_key_b64()) {
+                Ok(ledger) => (ledger.events().to_vec(), true, None),
+                Err(error) => (Vec::new(), false, Some(error.to_string())),
+            }
+        } else {
+            (Vec::new(), true, None)
+        };
+
+        let mut findings = Vec::new();
+
+        // A chain that will not verify is a critical failure on its own, and it
+        // makes every downstream cross-check meaningless — so stop here.
+        if !chain_verified {
+            findings.push(IntegrityFinding {
+                severity: "critical",
+                resource: "ledger.json".into(),
+                detail: format!(
+                    "the signed audit chain failed verification: {}",
+                    load_error.unwrap_or_else(|| "unknown error".into())
+                ),
+            });
+            return Ok(IntegrityReport {
+                chain_verified,
+                events: events.len(),
+                ok: false,
+                findings,
+            });
+        }
+
+        let has = |action: &str, resource: &str| {
+            events
+                .iter()
+                .any(|event| event.action == action && event.resource == resource)
+        };
+
+        // Every customer in state must have a signed creation event.
+        for customer in &workspace.customers {
+            let resource = format!("customer:{}", customer.id);
+            if !has("customer.create", &resource) {
+                findings.push(IntegrityFinding {
+                    severity: "critical",
+                    resource,
+                    detail: format!(
+                        "customer \"{}\" exists in state with no signed customer.create event",
+                        customer.name
+                    ),
+                });
+            }
+        }
+
+        // Every state that grants power or records an effect must be backed by
+        // the signed event that should have produced it.
+        for document in &workspace.documents {
+            let resource = format!("document:{}", document.id);
+            let approved = matches!(
+                document.status,
+                DocumentStatus::ApprovedPendingDelivery
+                    | DocumentStatus::Revoked
+                    | DocumentStatus::Delivered
+            );
+            if approved && !has("approval.granted", &resource) {
+                findings.push(IntegrityFinding {
+                    severity: "critical",
+                    resource: resource.clone(),
+                    detail: format!(
+                        "document \"{}\" is {} with no signed approval.granted event",
+                        document.title,
+                        document_status_label(document.status)
+                    ),
+                });
+            }
+            if document.status == DocumentStatus::Revoked && !has("effect.revoked", &resource) {
+                findings.push(IntegrityFinding {
+                    severity: "critical",
+                    resource: resource.clone(),
+                    detail: format!(
+                        "document \"{}\" is revoked with no signed effect.revoked event",
+                        document.title
+                    ),
+                });
+            }
+            if document.status == DocumentStatus::Delivered && !has("delivery.confirmed", &resource)
+            {
+                findings.push(IntegrityFinding {
+                    severity: "critical",
+                    resource,
+                    detail: format!(
+                        "document \"{}\" is delivered with no signed delivery.confirmed event",
+                        document.title
+                    ),
+                });
+            }
+        }
+
+        // Any approval that records an outbox effect must have the signed write.
+        for approval in &workspace.approvals {
+            let claims_outbox = approval
+                .evidence
+                .as_ref()
+                .is_some_and(|evidence| evidence.outbox.is_some());
+            if claims_outbox {
+                let resource = format!("document:{}", approval.document_id);
+                if !has("effect.file_written", &resource) {
+                    findings.push(IntegrityFinding {
+                        severity: "critical",
+                        resource,
+                        detail:
+                            "an approval records an outbox effect with no signed effect.file_written event"
+                                .into(),
+                    });
+                }
+            }
+        }
+
+        Ok(IntegrityReport {
+            chain_verified,
+            events: events.len(),
+            ok: findings.is_empty(),
+            findings,
+        })
+    }
+
     /// Full data export: the founder's right to leave with everything.
     pub fn export(&self) -> Result<serde_json::Value, WorkspaceError> {
         let workspace = self.load()?;
@@ -1919,6 +2094,59 @@ mod tests {
             store.confirm_delivery(Uuid::new_v4()),
             Err(WorkspaceError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn integrity_check_binds_state_to_the_signed_chain() {
+        let (dir, store) = store();
+        store.set_venture("Acme", "Landing pages").unwrap();
+        let workspace = store
+            .add_customer("Dr. Tan", "dr.tan@example.com", "")
+            .unwrap();
+        let customer_id = workspace.customers[0].id;
+        let workspace = store
+            .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
+            .unwrap();
+        let document_id = workspace.documents[0].id;
+        let workspace = store.request_send(document_id).unwrap();
+        store.decide(workspace.approvals[0].id, true).unwrap();
+
+        // A workspace built only through the audited API reconciles cleanly.
+        let clean = store.integrity_check().unwrap();
+        assert!(clean.ok && clean.chain_verified);
+        assert!(clean.findings.is_empty());
+        assert!(clean.events > 0);
+
+        // Fabricate state the way a hand-edited vault would: flip the delivered
+        // status onto a document that never went through the audited path. The
+        // signed chain has no delivery.confirmed for it, so the check catches it.
+        let mut tampered = store.load().unwrap();
+        tampered.documents[0].status = DocumentStatus::Delivered;
+        store.save(&tampered).unwrap();
+
+        let report = store.integrity_check().unwrap();
+        assert!(!report.ok);
+        assert!(report.chain_verified, "the chain itself is still intact");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.detail.contains("delivery.confirmed")
+                    && finding.resource == format!("document:{document_id}")),
+            "expected a finding for the fabricated delivered state, got {:?}",
+            report.findings
+        );
+
+        // Corrupting the signed chain itself fails closed before any cross-check.
+        let ledger_path = dir.path().join("ledger.json");
+        let mut events: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&ledger_path).unwrap()).unwrap();
+        events[0]["resource"] = serde_json::json!("document:forged");
+        std::fs::write(&ledger_path, serde_json::to_vec(&events).unwrap()).unwrap();
+
+        let broken = store.integrity_check().unwrap();
+        assert!(!broken.chain_verified && !broken.ok);
+        assert_eq!(broken.findings[0].resource, "ledger.json");
     }
 
     #[test]

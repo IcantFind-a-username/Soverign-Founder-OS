@@ -60,6 +60,8 @@ enum Commands {
         /// Path to a JSON bundle produced by the app's "Export all my data"
         path: PathBuf,
     },
+    /// Self-audit: reconcile local state against the signed audit chain
+    Integrity,
 }
 
 fn data_dir() -> PathBuf {
@@ -79,8 +81,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ModelCheck => cmd_model_check(),
         Commands::WorkflowDemo => cmd_workflow_demo()?,
         Commands::VerifyExport { path } => cmd_verify_export(&path)?,
+        Commands::Integrity => cmd_integrity()?,
     }
     Ok(())
+}
+
+fn cmd_integrity() -> Result<(), Box<dyn std::error::Error>> {
+    let store = workspace::Store::open(&data_dir())?;
+    let report = store.integrity_check()?;
+
+    let check = |ok: bool| if ok { "PASS" } else { "FAIL" };
+    println!("Self-audit — state reconciled against the signed audit chain");
+    println!(
+        "  signed audit chain {}  ({} events)",
+        check(report.chain_verified),
+        report.events
+    );
+    if report.findings.is_empty() {
+        println!("  state vs. evidence  PASS");
+    } else {
+        println!(
+            "  state vs. evidence  FAIL  ({} findings)",
+            report.findings.len()
+        );
+        for finding in &report.findings {
+            println!(
+                "    [{}] {} — {}",
+                finding.severity, finding.resource, finding.detail
+            );
+        }
+    }
+    if report.ok {
+        println!("\nVERIFIED — every state on disk is backed by signed evidence.");
+        Ok(())
+    } else {
+        // Fail closed with a non-zero exit so scripts can trust the verdict.
+        Err("integrity check FAILED — see findings above".into())
+    }
 }
 
 fn cmd_verify_export(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
