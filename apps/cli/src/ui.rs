@@ -38,7 +38,15 @@ use uuid::Uuid;
 use crate::demo;
 use crate::workspace;
 
-const UI_HTML: &str = include_str!("../assets/ui.html");
+// The frontend is deliberately a zero-dependency static bundle: no framework,
+// no npm supply chain, every byte embedded in this binary at compile time and
+// served from memory. Front and back communicate only via the /api JSON
+// endpoints below — the interface boundary of an SPA without the toolchain.
+const UI_HTML: &str = include_str!("../assets/index.html");
+const UI_CSS: &str = include_str!("../assets/styles.css");
+const UI_I18N_JS: &str = include_str!("../assets/i18n.js");
+const UI_APP_JS: &str = include_str!("../assets/app.js");
+const UI_FAVICON: &str = include_str!("../assets/favicon.svg");
 
 const MAX_REQUEST_BODY_BYTES: usize = 64 * 1024;
 
@@ -99,6 +107,14 @@ fn route(request: &mut tiny_http::Request, port: u16, root: &Path) -> UiResponse
     let url = request.url().to_owned();
     match (request.method().clone(), url.as_str()) {
         (Method::Get, "/") => html_response(UI_HTML),
+        (Method::Get, "/assets/styles.css") => asset_response(UI_CSS, "text/css; charset=utf-8"),
+        (Method::Get, "/assets/i18n.js") => {
+            asset_response(UI_I18N_JS, "application/javascript; charset=utf-8")
+        }
+        (Method::Get, "/assets/app.js") => {
+            asset_response(UI_APP_JS, "application/javascript; charset=utf-8")
+        }
+        (Method::Get, "/favicon.svg") => asset_response(UI_FAVICON, "image/svg+xml"),
         (Method::Get, "/api/state") => json_response(&state_json(root)),
         (Method::Get, "/api/command-center") => json_response(&command_center_json(root)),
         (Method::Get, "/api/workspace") => json_response(&workspace_get(root)),
@@ -353,6 +369,13 @@ fn html_response(body: &str) -> Response<std::io::Cursor<Vec<u8>>> {
     Response::from_string(body).with_header(
         Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
             .expect("static header"),
+    )
+}
+
+/// Serve one compile-time-embedded static asset with its content type.
+fn asset_response(body: &str, content_type: &str) -> Response<std::io::Cursor<Vec<u8>>> {
+    Response::from_string(body).with_header(
+        Header::from_bytes(b"Content-Type", content_type.as_bytes()).expect("static header"),
     )
 }
 
