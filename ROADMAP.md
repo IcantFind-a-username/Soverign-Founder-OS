@@ -64,7 +64,7 @@ Sovereign Runtime secure kernel
   - [ ] Phase D: reviewed WIT host interfaces and high-risk backend
     - [x] First host effect: audited, path-safe local outbox file-write broker (no network)
     - [ ] Reviewed WIT Component host interface and per-host-call authorization
-- [ ] Adversarial integration tests
+- [x] Adversarial integration tests
   - [x] Phase A: malicious Wasm import, loop, memory, table, ABI, and state tests
   - [x] Phase B foundation: manifest/artifact/input substitution, strict fields, trust state, V1/V2 separation, same-process replay, and backend downgrade tests
   - [x] Admission store: on-disk substitution, record forgery/cross-role, revoked-key, poisoned-entry, orphan-temp, and symlink tests
