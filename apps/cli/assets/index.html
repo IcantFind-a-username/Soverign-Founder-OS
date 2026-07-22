@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sovereign Founder OS</title>
+<link rel="stylesheet" href="/assets/styles.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<script>
+  // Apply the stored (or system) theme before first paint to avoid a flash.
+  (function () {
+    var stored = null;
+    try { stored = localStorage.getItem("sovereign-ui-theme"); } catch (e) {}
+    var theme = stored || (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.dataset.theme = theme;
+  })();
+</script>
+</head>
+<body>
+<div class="app-header">
+  <div class="header-inner">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+        <path d="M17 2.5 29.5 8v9.2c0 7.3-5.1 12.4-12.5 14.3C9.6 29.6 4.5 24.5 4.5 17.2V8L17 2.5Z"
+              stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+        <circle class="seal" cx="17" cy="15" r="4.4" stroke="currentColor" stroke-width="2.2"/>
+        <path class="seal" d="M17 19.4v5.2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+      <div class="brand-text">
+        <h1 data-i18n="title">SOVEREIGN FOUNDER OS</h1>
+        <div class="sub" data-i18n="stage"></div>
+      </div>
+    </div>
+    <div class="header-controls">
+      <button id="theme-toggle" class="icon-btn" aria-label="Theme">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2"/>
+          <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M18.8 5.2l-1.7 1.7M6.9 17.1l-1.7 1.7"/>
+        </svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.2 14.5A8.5 8.5 0 0 1 9.5 3.8a8.5 8.5 0 1 0 10.7 10.7Z"/>
+        </svg>
+      </button>
+      <div class="lang" role="group" aria-label="Language">
+        <button id="lang-en">EN</button>
+        <button id="lang-zh">中文</button>
+      </div>
+    </div>
+  </div>
+  <nav class="tabs">
+    <button id="tab-command" data-i18n="tab_command"></button>
+    <button id="tab-workspace" data-i18n="tab_workspace"></button>
+    <button id="tab-security" data-i18n="tab_security"></button>
+  </nav>
+</div>
+
+<main>
+<div class="intro" data-i18n="honest_intro"></div>
+
+<!-- ══════════════════ COMMAND CENTER VIEW ══════════════════ -->
+<div id="view-command" hidden>
+  <section>
+    <h2 data-i18n="cc_business_title"></h2>
+    <div class="panel pad" id="cc-venture"><span class="empty" data-i18n="cc_no_venture"></span></div>
+    <div class="tiles" style="margin-top:10px">
+      <div class="tile"><div class="label" data-i18n="cc_customers"></div><div class="value" id="cc-customers">–</div><div class="meta" data-i18n="cc_customers_meta"></div></div>
+      <div class="tile"><div class="label" data-i18n="cc_documents"></div><div class="value" id="cc-documents">–</div><div class="meta" id="cc-documents-meta"></div></div>
+      <div class="tile"><div class="label" data-i18n="cc_pending"></div><div class="value" id="cc-pending">–</div><div class="meta" data-i18n="cc_pending_meta"></div></div>
+      <div class="tile"><div class="label" data-i18n="cc_effects"></div><div class="value" id="cc-effects">–</div><div class="meta" id="cc-effects-meta"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="cc_guidance_title"></h2>
+    <div class="honest" data-i18n="cc_guidance_note"></div>
+    <div class="panel" style="margin-top:10px"><div id="cc-guidance" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="cc_decisions_title"></h2>
+    <div class="panel"><div id="cc-decisions" class="empty" data-i18n="cc_no_decisions"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="cc_evidence_title"></h2>
+    <div class="honest" data-i18n="cc_evidence_note"></div>
+    <div class="tiles" style="margin-top:10px">
+      <div class="tile"><div class="label" data-i18n="cc_chain"></div><div class="value" id="cc-chain">–</div><div class="meta" id="cc-chain-meta"></div></div>
+      <div class="tile"><div class="label" data-i18n="cc_signed"></div><div class="value" id="cc-signed">–</div><div class="meta" data-i18n="cc_signed_meta"></div></div>
+      <div class="tile"><div class="label" data-i18n="cc_disclosures"></div><div class="value" id="cc-disclosures">–</div><div class="meta" data-i18n="cc_disclosures_meta"></div></div>
+      <div class="tile"><div class="label" data-i18n="cc_plugins"></div><div class="value" id="cc-plugins">–</div><div class="meta" data-i18n="cc_plugins_meta"></div></div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════ WORKSPACE VIEW ══════════════════ -->
+<div id="view-workspace" hidden>
+  <section>
+    <h2 data-i18n="ws_venture_title"></h2>
+    <div class="panel pad form-grid">
+      <div><label data-i18n="ws_company_name"></label><input type="text" id="v-name" maxlength="200"></div>
+      <div><label data-i18n="ws_service_desc"></label><textarea id="v-service" maxlength="2000"></textarea></div>
+      <div class="toolbar">
+        <button class="primary" id="v-save" data-i18n="ws_save"></button>
+        <span class="status-line" id="v-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="ws_customers_title"></h2>
+    <div class="panel pad form-grid">
+      <div class="form-row">
+        <div><label data-i18n="ws_customer_name"></label><input type="text" id="c-name" maxlength="200"></div>
+        <button class="primary" id="c-add" data-i18n="ws_add_customer"></button>
+      </div>
+      <div><label data-i18n="ws_customer_email"></label><input type="text" id="c-email" maxlength="254" placeholder="name@example.com"></div>
+      <div><label data-i18n="ws_customer_notes"></label><input type="text" id="c-notes" maxlength="500"></div>
+    </div>
+    <div class="panel" style="margin-top:10px"><div id="customers" class="empty" data-i18n="ws_no_customers"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="ws_documents_title"></h2>
+    <div class="panel pad form-grid">
+      <div class="toolbar">
+        <div style="flex:1;min-width:200px"><label data-i18n="ws_for_customer"></label><select id="d-customer"></select></div>
+        <div style="width:140px"><label data-i18n="ws_amount"></label><input type="text" id="d-amount" placeholder="2500.00"></div>
+      </div>
+      <div class="toolbar">
+        <button class="primary" id="d-offer" data-i18n="ws_gen_offer"></button>
+        <button class="primary" id="d-invoice" data-i18n="ws_gen_invoice"></button>
+        <button class="ghost" id="d-assist" data-i18n="ws_assist"></button>
+        <span class="status-line" id="d-status"></span>
+      </div>
+      <div class="status-line" data-i18n="ws_doc_note"></div>
+      <div id="assist-box" hidden>
+        <div class="toolbar" style="justify-content:space-between">
+          <span class="badge warn" id="assist-label"></span>
+          <button class="ghost small" id="assist-copy" data-i18n="ws_assist_copy"></button>
+        </div>
+        <textarea id="assist-text" readonly style="min-height:120px"></textarea>
+        <div class="status-line" id="assist-meta"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:10px"><div id="documents" class="empty" data-i18n="ws_no_documents"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="ws_approvals_title"></h2>
+    <div class="panel"><div id="approvals" class="empty" data-i18n="ws_no_approvals"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="ws_backup_title"></h2>
+    <div class="panel pad form-grid">
+      <div class="toolbar">
+        <a href="/api/export" download><button class="ghost" data-i18n="ws_export"></button></a>
+        <span class="status-line" data-i18n="ws_export_note"></span>
+      </div>
+      <div class="status-line" data-i18n="ws_verify_note"></div>
+      <div class="toolbar">
+        <input type="file" id="verify-file" accept="application/json,.json">
+        <button class="ghost" id="verify-btn" data-i18n="ws_verify"></button>
+        <span class="status-line" id="verify-status"></span>
+      </div>
+      <div id="verify-report" class="panel pad" hidden></div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════ SECURITY VIEW ══════════════════ -->
+<div id="view-security" hidden>
+  <div class="tiles">
+    <div class="tile"><div class="label" data-i18n="tile_device"></div><div class="value" id="t-device">–</div><div class="meta" id="t-device-meta"></div></div>
+    <div class="tile"><div class="label" data-i18n="tile_events"></div><div class="value" id="t-events">–</div><div class="meta" id="t-chain"></div></div>
+    <div class="tile"><div class="label" data-i18n="tile_vault"></div><div class="value" id="t-vault">–</div><div class="meta" data-i18n="vault_meta"></div></div>
+    <div class="tile"><div class="label" data-i18n="tile_plugins"></div><div class="value" id="t-plugins">–</div><div class="meta" data-i18n="plugins_meta"></div></div>
+  </div>
+
+  <section>
+    <h2 data-i18n="sec_integrity"></h2>
+    <div class="honest" data-i18n="sec_integrity_note"></div>
+    <div class="panel"><div id="integrity" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="sec_disclosures"></h2>
+    <div class="honest" data-i18n="sec_disclosures_note"></div>
+    <div class="panel"><div id="disclosures" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="sec_plugins"></h2>
+    <div class="panel"><div id="plugins" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="sec_ledger"></h2>
+    <div class="panel"><div id="ledger" class="empty" data-i18n="loading"></div></div>
+  </section>
+
+  <section>
+    <h2 data-i18n="sec_gauntlet"></h2>
+    <div class="toolbar">
+      <button id="run" class="primary" data-i18n="btn_run"></button>
+      <button id="refresh" class="ghost" data-i18n="btn_refresh"></button>
+      <span class="mono" id="gauntlet-status"></span>
+    </div>
+    <div class="panel"><div id="gauntlet" class="empty" data-i18n="gauntlet_intro"></div></div>
+  </section>
+</div>
+
+</main>
+
+<div id="toasts" aria-live="polite"></div>
+
+<dialog id="confirm-dialog">
+  <div class="dialog-title" id="confirm-title"></div>
+  <div class="dialog-body" id="confirm-body"></div>
+  <div class="dialog-seal">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 2.5 20.5 6v6.2c0 5-3.4 8.5-8.5 9.8-5.1-1.3-8.5-4.8-8.5-9.8V6L12 2.5Z"/>
+    </svg>
+    <span data-i18n="confirm_seal_note"></span>
+  </div>
+  <div class="dialog-actions">
+    <button class="ghost" id="confirm-cancel" data-i18n="confirm_cancel"></button>
+    <button class="primary" id="confirm-ok" data-i18n="confirm_ok"></button>
+  </div>
+</dialog>
+
+<footer>
+  <div class="footer-inner">
+    <p><strong data-i18n="footer_limits_title"></strong> <span data-i18n="footer_limits"></span></p>
+  </div>
+</footer>
+
+<script src="/assets/i18n.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>
