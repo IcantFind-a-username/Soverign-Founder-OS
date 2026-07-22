@@ -1,8 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use sovereign_artifact::{
-    AdmissionLimits, ArtifactVerificationIntent, ArtifactVerifier, Digest, OperationSelector,
-    PreparedInvocation, RawResourceGrant, TrustedClock as ArtifactClock, CORE_WASM_ENTRYPOINT,
-    MANIFEST_PROTOCOL_VERSION,
+    AdmissionLimits, AdmittedArtifact, ArtifactStore, ArtifactVerificationIntent, ArtifactVerifier,
+    Digest, OperationSelector, PreparedInvocation, RawResourceGrant, TrustedClock as ArtifactClock,
+    CORE_WASM_ENTRYPOINT, MANIFEST_PROTOCOL_VERSION,
 };
 use sovereign_capability::v2::{
     CapabilityIssuerV2, CapabilityTokenV2, CapabilityV2Error, CapabilityV2IssueOptions,
@@ -12,7 +12,9 @@ use sovereign_capability::{CapabilityIssuer, IssueOptions};
 use sovereign_contracts::{
     ActionRequest, AutomationLevel, CapabilityToken, DataClass, PolicyDecision,
 };
-use sovereign_identity::{AuthorityRole, KeyValidity, PublisherRole, RoleTrustStore, TypedSigner};
+use sovereign_identity::{
+    AdmissionRole, AuthorityRole, KeyValidity, PublisherRole, RoleTrustStore, TypedSigner,
+};
 use sovereign_policy::{AuthenticatedPolicyContextV2, PolicyAuthorizationV2, PolicyEngine};
 use sovereign_sandbox::{
     ExecutionRuntime, SandboxError, SandboxExecutor, VerifiedExecutionRequest,
@@ -29,6 +31,8 @@ const SUBJECT: &str = "founder-session-subject";
 const RESOURCE: &str = "draft:alpha";
 const PUBLISHER_SECRET: [u8; 32] = [0x50; 32];
 const AUTHORITY_SECRET: [u8; 32] = [0x41; 32];
+const ADMISSION_ISSUER: &str = "device.local";
+const ADMISSION_SECRET: [u8; 32] = [0x44; 32];
 
 #[derive(Debug, Clone, Copy)]
 struct FixedClock(i64);
@@ -66,7 +70,7 @@ fn wasm_trapping() -> Vec<u8> {
     wat::parse_str(r#"(module (func (export "sovereign_run") (result i32) unreachable))"#).unwrap()
 }
 
-fn admit_and_prepare(component: &[u8], content: &str) -> PreparedInvocation {
+fn admit_and_prepare(component: &[u8], content: &str) -> (PreparedInvocation, AdmittedArtifact) {
     let publisher =
         TypedSigner::<PublisherRole>::from_secret_bytes(PUBLISHER_ISSUER, PUBLISHER_SECRET)
             .unwrap();
@@ -128,13 +132,24 @@ fn admit_and_prepare(component: &[u8], content: &str) -> PreparedInvocation {
         "resource": RESOURCE
     }))
     .unwrap();
-    PreparedInvocation::prepare(
+    // The executor requires the owner-admitted handle (RFC 0002 step 8):
+    // admit through a throwaway content-addressed store.
+    let dir = tempfile::tempdir().unwrap();
+    let admission_signer =
+        TypedSigner::<AdmissionRole>::from_secret_bytes(ADMISSION_ISSUER, ADMISSION_SECRET)
+            .unwrap();
+    let store = ArtifactStore::open(dir.path()).unwrap();
+    let admitted = store
+        .admit(&artifact, &admission_signer, &FixedClock(NOW))
+        .unwrap();
+    let invocation = PreparedInvocation::prepare(
         &artifact,
         &selector(),
         &input,
         vec![RawResourceGrant::new("primary", RESOURCE)],
     )
-    .unwrap()
+    .unwrap();
+    (invocation, admitted)
 }
 
 fn decision(invocation: &PreparedInvocation) -> PolicyAuthorizationV2 {
@@ -203,12 +218,14 @@ fn issue(
 fn request<'a>(
     token: &'a CapabilityTokenV2,
     invocation: &'a PreparedInvocation,
+    admitted: &'a AdmittedArtifact,
     policy_decision: &'a PolicyAuthorizationV2,
     _session_id: Uuid,
 ) -> VerifiedExecutionRequest<'a> {
     VerifiedExecutionRequest {
         token,
         invocation,
+        admitted,
         venture_id: VENTURE,
         subject_id: SUBJECT,
         session_id: policy_decision.session_id(),
@@ -217,8 +234,44 @@ fn request<'a>(
 }
 
 #[test]
+fn executor_refuses_a_mismatched_admitted_handle_without_consuming_the_token() {
+    let (invocation, admitted) = admit_and_prepare(&wasm_returning(17), "first input");
+    let (_other_invocation, other_admitted) = admit_and_prepare(&wasm_returning(3), "other input");
+    let policy_decision = decision(&invocation);
+    let session_id = Uuid::new_v4();
+    let (issuer, validator) = authority();
+    let token = issue(&issuer, &invocation, &policy_decision, session_id);
+    let mut executor = VerifiedSandboxExecutor::new(vec![selector()], validator).unwrap();
+
+    // An admitted handle for a *different* artifact is refused before the
+    // journal opens or the one-use capability is consumed.
+    assert!(matches!(
+        executor.execute(request(
+            &token,
+            &invocation,
+            &other_admitted,
+            &policy_decision,
+            session_id,
+        )),
+        Err(SandboxError::ArtifactNotAdmitted)
+    ));
+
+    // Nothing was burned: the same token still runs with the right handle.
+    let result = executor
+        .execute(request(
+            &token,
+            &invocation,
+            &admitted,
+            &policy_decision,
+            session_id,
+        ))
+        .unwrap();
+    assert_eq!(result.exit_code, 17);
+}
+
+#[test]
 fn signed_verified_prepared_capability_executes_exact_artifact() {
-    let invocation = admit_and_prepare(&wasm_returning(17), "first input");
+    let (invocation, admitted) = admit_and_prepare(&wasm_returning(17), "first input");
     let policy_decision = decision(&invocation);
     let session_id = Uuid::new_v4();
     let (issuer, validator) = authority();
@@ -226,7 +279,13 @@ fn signed_verified_prepared_capability_executes_exact_artifact() {
     let mut executor = VerifiedSandboxExecutor::new(vec![selector()], validator).unwrap();
 
     let result = executor
-        .execute(request(&token, &invocation, &policy_decision, session_id))
+        .execute(request(
+            &token,
+            &invocation,
+            &admitted,
+            &policy_decision,
+            session_id,
+        ))
         .unwrap();
     assert_eq!(result.exit_code, 17);
     assert_eq!(
@@ -240,9 +299,11 @@ fn signed_verified_prepared_capability_executes_exact_artifact() {
 #[test]
 fn artifact_and_input_substitution_are_denied_before_guest_startup() {
     let original_module = wasm_returning(0);
-    let original = admit_and_prepare(&original_module, "authorized input");
-    let substituted_artifact = admit_and_prepare(&wasm_trapping(), "authorized input");
-    let substituted_input = admit_and_prepare(&original_module, "substituted input");
+    let (original, original_admitted) = admit_and_prepare(&original_module, "authorized input");
+    let (substituted_artifact, substituted_admitted) =
+        admit_and_prepare(&wasm_trapping(), "authorized input");
+    let (substituted_input, substituted_input_admitted) =
+        admit_and_prepare(&original_module, "substituted input");
     let policy_decision = decision(&original);
     let session_id = Uuid::new_v4();
     let (issuer, validator) = authority();
@@ -253,6 +314,7 @@ fn artifact_and_input_substitution_are_denied_before_guest_startup() {
         executor.execute(request(
             &token,
             &substituted_artifact,
+            &substituted_admitted,
             &policy_decision,
             session_id,
         )),
@@ -264,6 +326,7 @@ fn artifact_and_input_substitution_are_denied_before_guest_startup() {
         executor.execute(request(
             &token,
             &substituted_input,
+            &substituted_input_admitted,
             &policy_decision,
             session_id,
         )),
@@ -273,14 +336,20 @@ fn artifact_and_input_substitution_are_denied_before_guest_startup() {
     ));
 
     let valid = executor
-        .execute(request(&token, &original, &policy_decision, session_id))
+        .execute(request(
+            &token,
+            &original,
+            &original_admitted,
+            &policy_decision,
+            session_id,
+        ))
         .unwrap();
     assert_eq!(valid.exit_code, 0);
 }
 
 #[test]
 fn structured_allowlist_does_not_accept_dotted_string_collision() {
-    let invocation = admit_and_prepare(&wasm_returning(0), "first input");
+    let (invocation, admitted) = admit_and_prepare(&wasm_returning(0), "first input");
     let policy_decision = decision(&invocation);
     let session_id = Uuid::new_v4();
     let (issuer, validator) = authority();
@@ -291,7 +360,13 @@ fn structured_allowlist_does_not_accept_dotted_string_collision() {
         VerifiedSandboxExecutor::new(vec![ambiguous_if_flattened], validator).unwrap();
 
     let error = executor
-        .execute(request(&token, &invocation, &policy_decision, session_id))
+        .execute(request(
+            &token,
+            &invocation,
+            &admitted,
+            &policy_decision,
+            session_id,
+        ))
         .unwrap_err();
     assert!(matches!(
         error,
@@ -302,7 +377,7 @@ fn structured_allowlist_does_not_accept_dotted_string_collision() {
 
 #[test]
 fn guest_failure_still_consumes_v2_capability() {
-    let invocation = admit_and_prepare(&wasm_trapping(), "first input");
+    let (invocation, admitted) = admit_and_prepare(&wasm_trapping(), "first input");
     let policy_decision = decision(&invocation);
     let session_id = Uuid::new_v4();
     let (issuer, validator) = authority();
@@ -310,11 +385,23 @@ fn guest_failure_still_consumes_v2_capability() {
     let mut executor = VerifiedSandboxExecutor::new(vec![selector()], validator).unwrap();
 
     assert!(matches!(
-        executor.execute(request(&token, &invocation, &policy_decision, session_id,)),
+        executor.execute(request(
+            &token,
+            &invocation,
+            &admitted,
+            &policy_decision,
+            session_id
+        )),
         Err(SandboxError::GuestTrap(_))
     ));
     assert!(matches!(
-        executor.execute(request(&token, &invocation, &policy_decision, session_id,)),
+        executor.execute(request(
+            &token,
+            &invocation,
+            &admitted,
+            &policy_decision,
+            session_id
+        )),
         Err(SandboxError::CapabilityV2(CapabilityV2Error::Replay))
     ));
 }
@@ -363,7 +450,7 @@ fn v1_token_remains_on_legacy_executor_and_runtime_only() {
 #[test]
 fn execution_journal_records_completed_run() {
     let dir = tempfile::tempdir().unwrap();
-    let invocation = admit_and_prepare(&wasm_returning(9), "journal input");
+    let (invocation, admitted) = admit_and_prepare(&wasm_returning(9), "journal input");
     let policy_decision = decision(&invocation);
     let session_id = Uuid::new_v4();
     let (issuer, validator) = authority();
@@ -373,7 +460,13 @@ fn execution_journal_records_completed_run() {
         .with_execution_journal(sovereign_execution::ExecutionJournal::open(dir.path()).unwrap());
 
     let result = executor
-        .execute(request(&token, &invocation, &policy_decision, session_id))
+        .execute(request(
+            &token,
+            &invocation,
+            &admitted,
+            &policy_decision,
+            session_id,
+        ))
         .unwrap();
     assert_eq!(result.exit_code, 9);
 
@@ -395,7 +488,7 @@ fn execution_journal_records_completed_run() {
 #[test]
 fn execution_journal_records_guest_trap_as_failed_not_indeterminate() {
     let dir = tempfile::tempdir().unwrap();
-    let invocation = admit_and_prepare(&wasm_trapping(), "journal input");
+    let (invocation, admitted) = admit_and_prepare(&wasm_trapping(), "journal input");
     let policy_decision = decision(&invocation);
     let session_id = Uuid::new_v4();
     let (issuer, validator) = authority();
@@ -405,7 +498,13 @@ fn execution_journal_records_guest_trap_as_failed_not_indeterminate() {
         .with_execution_journal(sovereign_execution::ExecutionJournal::open(dir.path()).unwrap());
 
     assert!(matches!(
-        executor.execute(request(&token, &invocation, &policy_decision, session_id)),
+        executor.execute(request(
+            &token,
+            &invocation,
+            &admitted,
+            &policy_decision,
+            session_id
+        )),
         Err(SandboxError::GuestTrap(_))
     ));
 

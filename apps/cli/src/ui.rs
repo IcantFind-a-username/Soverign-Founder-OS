@@ -16,8 +16,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::Duration;
 use sovereign_artifact::{
-    AdmissionRecordClaimsV1, ArtifactError, ArtifactVerificationIntent, ArtifactVerifier, Digest,
-    OperationSelector, PreparedInvocation, RawResourceGrant, VerifiedArtifact,
+    AdmissionRecordClaimsV1, AdmittedArtifact, ArtifactError, ArtifactStore,
+    ArtifactVerificationIntent, ArtifactVerifier, Digest, OperationSelector, PreparedInvocation,
+    RawResourceGrant, SystemClock as ArtifactClock, VerifiedArtifact,
     HARD_MAX_SIGNED_ADMISSION_BYTES,
 };
 use sovereign_audit_ledger::{AppendInput, AuditLedger};
@@ -641,13 +642,40 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         &demo::invoice_manifest_json(&gauntlet.publisher, &invoice_component),
         &invoice_component,
     )?;
+    let stress_component = demo::compile_wat(
+        r#"(module
+            (func (export "sovereign_run") (result i32)
+                (loop $forever i32.const 1 drop br $forever)
+                unreachable))"#,
+    );
+    let stress_artifact = gauntlet.verify(
+        &demo::stress_manifest_json(&gauntlet.publisher, &stress_component),
+        &stress_component,
+    )?;
+
+    // The executor requires the owner-admitted handle (RFC 0002 step 8), so
+    // the gauntlet admits both plugins through a throwaway content-addressed
+    // store; the directory is ephemeral and removed at the end of the run.
+    let admission_dir =
+        std::env::temp_dir().join(format!("sovereign-gauntlet-{}", Uuid::new_v4().simple()));
+    let admission_signer = TypedSigner::<AdmissionRole>::from_secret_bytes(
+        demo::ADMISSION_ISSUER,
+        demo::DEMO_ADMISSION_SECRET,
+    )?;
+    let admission_store = ArtifactStore::open(&admission_dir)?;
+    let invoice_admitted =
+        admission_store.admit(&invoice_artifact, &admission_signer, &ArtifactClock)?;
+    let stress_admitted =
+        admission_store.admit(&stress_artifact, &admission_signer, &ArtifactClock)?;
+
     let invocation = prepare_invoice(&invoice_artifact, 250_000)?;
     let (decision, idempotency) = gauntlet.decide(&invocation, AutomationLevel::L1Draft)?;
     let token = gauntlet.issue(&invocation, &decision, idempotency)?;
 
     let mut results = Vec::new();
 
-    let baseline = executor.execute(gauntlet.request(&token, &invocation, &decision));
+    let baseline =
+        executor.execute(gauntlet.request(&token, &invocation, &invoice_admitted, &decision));
     check(
         &mut results,
         "baseline",
@@ -656,7 +684,8 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         "signed plugin ran in the import-free Wasmtime sandbox under an exact one-use capability",
     );
 
-    let replay = executor.execute(gauntlet.request(&token, &invocation, &decision));
+    let replay =
+        executor.execute(gauntlet.request(&token, &invocation, &invoice_admitted, &decision));
     check(
         &mut results,
         "replay",
@@ -672,15 +701,35 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         gauntlet.decide(&invocation, AutomationLevel::L1Draft)?;
     let fresh_token = gauntlet.issue(&invocation, &fresh_decision, fresh_idempotency)?;
     let swapped = prepare_invoice(&invoice_artifact, 9_900_000)?;
-    let substitution = executor.execute(gauntlet.request(&fresh_token, &swapped, &fresh_decision));
+    let substitution = executor.execute(gauntlet.request(
+        &fresh_token,
+        &swapped,
+        &invoice_admitted,
+        &fresh_decision,
+    ));
     let substitution_denied = matches!(
         substitution,
         Err(SandboxError::CapabilityV2(
             CapabilityV2Error::InvocationMismatch("canonical_input_digest")
         ))
     );
+    // A publisher-verified but wrongly-admitted handle must be refused
+    // before the one-use token is consumed — admission binds execution to
+    // exactly the artifact the owner admitted.
+    let admission_mismatch = executor.execute(gauntlet.request(
+        &fresh_token,
+        &invocation,
+        &stress_admitted,
+        &fresh_decision,
+    ));
+    let admission_denied = matches!(admission_mismatch, Err(SandboxError::ArtifactNotAdmitted));
     let honest_reuse = executor
-        .execute(gauntlet.request(&fresh_token, &invocation, &fresh_decision))
+        .execute(gauntlet.request(
+            &fresh_token,
+            &invocation,
+            &invoice_admitted,
+            &fresh_decision,
+        ))
         .is_ok();
     check(
         &mut results,
@@ -688,6 +737,13 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         "Input substitution after authorization",
         substitution_denied && honest_reuse,
         "swapped input was denied by digest mismatch; the untouched token still ran the authorized input",
+    );
+    check(
+        &mut results,
+        "admission_binding",
+        "Executing without the owner's admission",
+        admission_denied && honest_reuse,
+        "an admitted handle for a different artifact was refused before any code ran or any token was consumed",
     );
 
     let mut greedy = demo::invoice_manifest_json(&gauntlet.publisher, &invoice_component);
@@ -701,16 +757,6 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         "a manifest requesting filesystem access was rejected before any code ran",
     );
 
-    let stress_component = demo::compile_wat(
-        r#"(module
-            (func (export "sovereign_run") (result i32)
-                (loop $forever i32.const 1 drop br $forever)
-                unreachable))"#,
-    );
-    let stress_artifact = gauntlet.verify(
-        &demo::stress_manifest_json(&gauntlet.publisher, &stress_component),
-        &stress_component,
-    )?;
     let stress_input = serde_json::json!({ "resource": "stress:demo" });
     let stress_invocation = PreparedInvocation::prepare(
         &stress_artifact,
@@ -721,8 +767,12 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
     let (stress_decision, stress_idempotency) =
         gauntlet.decide(&stress_invocation, AutomationLevel::L1Draft)?;
     let stress_token = gauntlet.issue(&stress_invocation, &stress_decision, stress_idempotency)?;
-    let loop_result =
-        executor.execute(gauntlet.request(&stress_token, &stress_invocation, &stress_decision));
+    let loop_result = executor.execute(gauntlet.request(
+        &stress_token,
+        &stress_invocation,
+        &stress_admitted,
+        &stress_decision,
+    ));
     check(
         &mut results,
         "infinite_loop",
@@ -787,6 +837,10 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         tamper_detected,
         "rewriting one recorded action broke the signed hash chain and was detected",
     );
+
+    // The admission store was a throwaway for this run; best-effort cleanup
+    // (an early error above may leak one temp dir — harmless, OS-cleaned).
+    let _ = std::fs::remove_dir_all(&admission_dir);
 
     Ok(results)
 }
@@ -855,11 +909,13 @@ impl Gauntlet {
         &self,
         token: &'a CapabilityTokenV2,
         invocation: &'a PreparedInvocation,
+        admitted: &'a AdmittedArtifact,
         decision: &'a PolicyAuthorizationV2,
     ) -> VerifiedExecutionRequest<'a> {
         VerifiedExecutionRequest {
             token,
             invocation,
+            admitted,
             venture_id: demo::VENTURE,
             subject_id: demo::SUBJECT,
             session_id: self.session_id,

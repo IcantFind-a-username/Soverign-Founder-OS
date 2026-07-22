@@ -71,6 +71,7 @@ impl Store {
         )?;
         let result = self.execute_in_sandbox(
             selector,
+            &admitted,
             &approval,
             &token,
             &invocation,
@@ -246,6 +247,7 @@ impl Store {
     fn execute_in_sandbox(
         &self,
         selector: OperationSelector,
+        admitted: &AdmittedArtifact,
         approval: &OwnerApproval,
         token: &CapabilityTokenV2,
         invocation: &PreparedInvocation,
@@ -291,6 +293,7 @@ impl Store {
                 VerifiedExecutionRequest {
                     token,
                     invocation,
+                    admitted,
                     venture_id: "workspace",
                     subject_id: "founder",
                     session_id,

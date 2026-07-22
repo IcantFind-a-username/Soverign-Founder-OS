@@ -3,7 +3,7 @@ mod wasm;
 use std::collections::BTreeSet;
 
 use chrono::Utc;
-use sovereign_artifact::{Digest, OperationSelector, PreparedInvocation};
+use sovereign_artifact::{AdmittedArtifact, Digest, OperationSelector, PreparedInvocation};
 use sovereign_capability::approval::SignedApprovalV1;
 use sovereign_capability::v2::{
     CapabilityTokenV2, CapabilityV2Error, CapabilityV2ValidationContext, CapabilityValidatorV2,
@@ -26,6 +26,8 @@ pub enum SandboxError {
     CapabilityV2(#[from] CapabilityV2Error),
     #[error("tool not allowed: {0}")]
     ToolNotAllowed(String),
+    #[error("the presented admitted-artifact handle does not match this invocation's artifact")]
+    ArtifactNotAdmitted,
     #[error("verified operation is not present in the exact structured allowlist")]
     VerifiedOperationNotAllowed { selector: OperationSelector },
     #[error("execution failed: {0}")]
@@ -168,6 +170,11 @@ pub struct ExecutionResult {
 pub struct VerifiedExecutionRequest<'a> {
     pub token: &'a CapabilityTokenV2,
     pub invocation: &'a PreparedInvocation,
+    /// Proof of local admission (RFC 0002 step 8): only an owner-admitted
+    /// artifact may enter the execution path. The executor fail-closed binds
+    /// this handle to the invocation's artifact by component and manifest
+    /// digest before consuming anything.
+    pub admitted: &'a AdmittedArtifact,
     pub venture_id: &'a str,
     pub subject_id: &'a str,
     pub session_id: Uuid,
@@ -239,6 +246,20 @@ impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
         request: VerifiedExecutionRequest<'_>,
         approval: Option<&SignedApprovalV1>,
     ) -> Result<WasmExecutionResult, SandboxError> {
+        // Local admission is required before anything else is even attempted
+        // (RFC 0002 step 8: only the admitted handle may enter the execution
+        // path). Fail closed *before* the journal opens or the one-use
+        // capability is consumed, so presenting an unadmitted artifact burns
+        // nothing. Digest equality over the owned bytes binds the handle to
+        // exactly this invocation's artifact.
+        let admitted = request.admitted.artifact();
+        let invoked = request.invocation.artifact();
+        if admitted.component_digest() != invoked.component_digest()
+            || admitted.manifest_digest() != invoked.manifest_digest()
+        {
+            return Err(SandboxError::ArtifactNotAdmitted);
+        }
+
         let selector = request.invocation.operation();
         if !self.allowed_operations.contains(selector) {
             return Err(SandboxError::VerifiedOperationNotAllowed {

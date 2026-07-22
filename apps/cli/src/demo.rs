@@ -290,6 +290,7 @@ impl Demo {
         let result = executor.execute(VerifiedExecutionRequest {
             token: &token,
             invocation: &invocation,
+            admitted: plugin,
             venture_id: VENTURE,
             subject_id: SUBJECT,
             session_id: self.session_id,
@@ -351,6 +352,7 @@ impl Demo {
         match executor.execute(VerifiedExecutionRequest {
             token: used_token,
             invocation,
+            admitted: invoice_plugin,
             venture_id: VENTURE,
             subject_id: SUBJECT,
             session_id: self.session_id,
@@ -380,6 +382,7 @@ impl Demo {
         match executor.execute(VerifiedExecutionRequest {
             token: &fresh_token,
             invocation: &swapped,
+            admitted: invoice_plugin,
             venture_id: VENTURE,
             subject_id: SUBJECT,
             session_id: self.session_id,
@@ -393,6 +396,7 @@ impl Demo {
         match executor.execute(VerifiedExecutionRequest {
             token: &fresh_token,
             invocation,
+            admitted: invoice_plugin,
             venture_id: VENTURE,
             subject_id: SUBJECT,
             session_id: self.session_id,
@@ -441,6 +445,7 @@ impl Demo {
         match executor.execute(VerifiedExecutionRequest {
             token: &stress_token,
             invocation: &stress_invocation,
+            admitted: stress_plugin,
             venture_id: VENTURE,
             subject_id: SUBJECT,
             session_id: self.session_id,
