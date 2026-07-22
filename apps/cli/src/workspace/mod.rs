@@ -37,6 +37,8 @@ mod util;
 mod verify;
 
 #[cfg(test)]
+mod stage1_suite;
+#[cfg(test)]
 mod tests;
 
 pub use types::*;

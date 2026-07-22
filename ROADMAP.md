@@ -68,7 +68,7 @@ Sovereign Runtime secure kernel
   - [x] Phase A: malicious Wasm import, loop, memory, table, ABI, and state tests
   - [x] Phase B foundation: manifest/artifact/input substitution, strict fields, trust state, V1/V2 separation, same-process replay, and backend downgrade tests
   - [x] Admission store: on-disk substitution, record forgery/cross-role, revoked-key, poisoned-entry, orphan-temp, and symlink tests
-  - [ ] Full Stage 1 authorization, replay, audit, and backend downgrade suite (the live gauntlet now runs eleven attacks — replay, input substitution, admission binding, hostile compilation, cache poisoning, greedy manifest, runaway loop, red-data egress, approval bypass, audit tampering — plus crash-window and interrupted-operation tests; a consolidated named suite remains)
+  - [x] Full Stage 1 authorization, replay, audit, and backend downgrade suite: a named end-to-end suite over the assembled product kernel (`workspace/stage1_suite.rs`) — no effect without approval, rejected sends inert, decided approvals unreplayable, ordered signed evidence with tamper detection, verified-V2-only execution — alongside the eleven-attack live gauntlet and the per-crate attack suites
 
 **Exit criteria:** A malicious agent cannot read files or execute external actions without authorization.
 
