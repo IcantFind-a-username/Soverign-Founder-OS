@@ -314,6 +314,23 @@
   .dialog-seal svg { width: 13px; height: 13px; flex-shrink: 0; }
   .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
 
+  /* ═══════════ Toasts ═══════════ */
+  #toasts {
+    position: fixed; bottom: 22px; right: 22px; z-index: 40;
+    display: flex; flex-direction: column; gap: 10px; max-width: min(420px, calc(100vw - 44px));
+  }
+  .toast {
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--panel-edge); border-left: 3px solid var(--ink-3);
+    border-radius: var(--r-md); box-shadow: var(--shadow-2);
+    padding: 12px 16px; font-size: 13.5px; line-height: 1.5; cursor: pointer;
+    animation: toast-in .22s var(--ease);
+  }
+  .toast.good { border-left-color: var(--good); }
+  .toast.bad { border-left-color: var(--critical); }
+  .toast.out { opacity: 0; transform: translateY(6px); transition: all .24s var(--ease); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
   footer {
     border-top: 1px solid var(--panel-edge);
     margin-top: 56px; padding: 18px clamp(16px, 4vw, 40px) 40px;
@@ -537,6 +554,8 @@
 
 </main>
 
+<div id="toasts" aria-live="polite"></div>
+
 <dialog id="confirm-dialog">
   <div class="dialog-title" id="confirm-title"></div>
   <div class="dialog-body" id="confirm-body"></div>
@@ -607,6 +626,10 @@ const STRINGS = {
     confirm_revoke_body: (s) => "This deletes the composed .eml for “" + s + "” from your outbox and signs a revocation event. The original approval evidence is kept as history.",
     confirm_deliver_title: "Mark as delivered?",
     confirm_deliver_body: (s) => "This records your own attestation that you sent “" + s + "” to the customer yourself. The system sends nothing on your behalf.",
+    toast_approved: (s) => "Approved — “" + s + "” signed and composed to your outbox.",
+    toast_rejected: (s) => "Rejected — the decision for “" + s + "” is on the audit chain.",
+    toast_revoked: (s) => "Revoked — the .eml for “" + s + "” was deleted and the revocation signed.",
+    toast_delivered: (s) => "Delivered — your attestation for “" + s + "” is on the audit chain.",
     ws_venture_title: "Your company",
     ws_company_name: "Company name", ws_service_desc: "What service do you sell?",
     ws_save: "Save", saved: "saved ✓",
@@ -733,6 +756,10 @@ const STRINGS = {
     confirm_revoke_body: (s) => "这将从发件箱删除“" + s + "”对应的 .eml,并签名记录一次撤销。原审批证据将作为历史保留。",
     confirm_deliver_title: "标记为已送达?",
     confirm_deliver_body: (s) => "这将记录你本人的声明:你已自行把“" + s + "”发送给客户。系统不会替你发送任何内容。",
+    toast_approved: (s) => "已批准——“" + s + "”已签名并生成到发件箱。",
+    toast_rejected: (s) => "已拒绝——“" + s + "”的决定已写入审计链。",
+    toast_revoked: (s) => "已撤销——“" + s + "”的 .eml 已删除,撤销已签名记录。",
+    toast_delivered: (s) => "已送达——你对“" + s + "”的送达声明已写入审计链。",
     ws_venture_title: "你的公司",
     ws_company_name: "公司名称", ws_service_desc: "你提供什么服务?",
     ws_save: "保存", saved: "已保存 ✓",
@@ -877,6 +904,18 @@ async function api(path, body) {
   return response.json();
 }
 
+// Visible, consistent feedback for every action: successes confirm what was
+// signed, and errors are never swallowed or shown far from where they happened.
+function toast(kind, message) {
+  const node = el("div", "toast " + kind, message);
+  node.addEventListener("click", () => node.remove());
+  $("toasts").appendChild(node);
+  setTimeout(() => {
+    node.classList.add("out");
+    setTimeout(() => node.remove(), 260);
+  }, 4500);
+}
+
 // Signed decisions are permanent: every irreversible action passes through
 // this dialog, which states exactly what will happen before it happens.
 function confirmAction(kind, subject) {
@@ -949,7 +988,7 @@ function renderWorkspace() {
         submit.addEventListener("click", async () => {
           const result = await api("/api/workspace/request-send", { document_id: d.id });
           if (result.ok) { ws = result.workspace; renderWorkspace(); }
-          else $("d-status").textContent = result.error;
+          else toast("bad", result.error);
         });
         head.appendChild(submit);
       }
@@ -958,16 +997,16 @@ function renderWorkspace() {
         delivered.addEventListener("click", async () => {
           if (!await confirmAction("deliver", d.title)) return;
           const result = await api("/api/workspace/confirm-delivery", { document_id: d.id });
-          if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
-          else $("d-status").textContent = result.error;
+          if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); toast("good", t("toast_delivered")(d.title)); }
+          else toast("bad", result.error);
         });
         head.appendChild(delivered);
         const revoke = el("button", "ghost small", t("ws_revoke"));
         revoke.addEventListener("click", async () => {
           if (!await confirmAction("revoke", d.title)) return;
           const result = await api("/api/workspace/revoke", { document_id: d.id });
-          if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
-          else $("d-status").textContent = result.error;
+          if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); toast("good", t("toast_revoked")(d.title)); }
+          else toast("bad", result.error);
         });
         head.appendChild(revoke);
       }
@@ -1003,9 +1042,15 @@ function renderWorkspace() {
       const approve = el("button", "approve", "✓ " + t("ws_approve"));
       const reject = el("button", "reject", "✗ " + t("ws_reject"));
       const decide = async (yes) => {
-        if (!await confirmAction(yes ? "approve" : "reject", doc ? doc.title : a.document_id)) return;
+        const title = doc ? doc.title : a.document_id;
+        if (!await confirmAction(yes ? "approve" : "reject", title)) return;
         const result = await api("/api/workspace/decide", { approval_id: a.id, approve: yes });
-        if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
+        if (result.ok) {
+          ws = result.workspace; renderWorkspace(); loadState();
+          toast("good", t(yes ? "toast_approved" : "toast_rejected")(title));
+        } else {
+          toast("bad", result.error);
+        }
       };
       approve.addEventListener("click", () => decide(true));
       reject.addEventListener("click", () => decide(false));
@@ -1018,14 +1063,15 @@ function renderWorkspace() {
 
 async function saveVenture() {
   const result = await api("/api/workspace/venture", { name: $("v-name").value, service: $("v-service").value });
-  $("v-status").textContent = result.ok ? t("saved") : result.error;
+  $("v-status").textContent = result.ok ? t("saved") : "";
   if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
+  else toast("bad", result.error);
 }
 
 async function addCustomer() {
   const result = await api("/api/workspace/customer", { name: $("c-name").value, email: $("c-email").value, notes: $("c-notes").value });
   if (result.ok) { $("c-name").value = ""; $("c-email").value = ""; $("c-notes").value = ""; ws = result.workspace; renderWorkspace(); loadState(); }
-  else $("d-status").textContent = result.error;
+  else toast("bad", result.error);
 }
 
 async function draftAssist() {
@@ -1033,7 +1079,7 @@ async function draftAssist() {
   if (!customer_id) { $("d-status").textContent = t("ws_no_customers"); return; }
   $("d-status").textContent = "…";
   const result = await api("/api/workspace/assist", { customer_id });
-  if (!result.ok) { $("d-status").textContent = result.error; return; }
+  if (!result.ok) { $("d-status").textContent = ""; toast("bad", result.error); return; }
   $("d-status").textContent = "";
   const s = result.suggestion;
   $("assist-box").hidden = false;
@@ -1047,8 +1093,9 @@ async function createDocument(kind) {
   const body = { customer_id: $("d-customer").value };
   if (kind === "invoice") body.amount = $("d-amount").value;
   const result = await api("/api/workspace/" + kind, body);
-  $("d-status").textContent = result.ok ? t("saved") : result.error;
+  $("d-status").textContent = result.ok ? t("saved") : "";
   if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
+  else toast("bad", result.error);
 }
 
 /* ─────────────── Security Center ─────────────── */
@@ -1324,7 +1371,12 @@ function renderCommandDecisions(decisions) {
 async function commandDecide(approvalId, approve, title) {
   if (!await confirmAction(approve ? "approve" : "reject", title || "")) return;
   const result = await api("/api/workspace/decide", { approval_id: approvalId, approve });
-  if (result.ok) { ws = result.workspace; renderWorkspace(); }
+  if (result.ok) {
+    ws = result.workspace; renderWorkspace();
+    toast("good", t(approve ? "toast_approved" : "toast_rejected")(title || ""));
+  } else {
+    toast("bad", result.error);
+  }
   await loadCommandCenter();
   await loadState();
 }
