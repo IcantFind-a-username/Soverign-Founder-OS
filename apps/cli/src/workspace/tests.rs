@@ -371,6 +371,155 @@ fn torn_decision_is_a_warning_until_state_lands() {
 }
 
 #[test]
+fn durable_send_resumes_after_crash_without_rerunning_the_effect() {
+    use super::send_workflow::ExecuteSendStep;
+    use sovereign_workflow::{WorkflowRunner, WorkflowStep};
+
+    let (dir, store) = store();
+    store.set_venture("Acme", "Landing pages").unwrap();
+    let workspace = store
+        .add_customer("Dr. Tan", "dr.tan@example.com", "")
+        .unwrap();
+    let customer_id = workspace.customers[0].id;
+    let workspace = store
+        .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
+        .unwrap();
+    let document_id = workspace.documents[0].id;
+    let workspace = store.request_send(document_id).unwrap();
+    let approval_id = workspace.approvals[0].id;
+
+    // Simulate a crash between execute and commit: run only the first step
+    // of the same workflow the app would run, then "die".
+    let workflow_id = format!("send-{approval_id}");
+    let wf_dir = dir.path().join("workflows").join(&workflow_id);
+    let record_path = wf_dir.join("record.json");
+    let runner = WorkflowRunner::open(&wf_dir, &workflow_id).unwrap();
+    let only_execute: Vec<Box<dyn WorkflowStep>> = vec![Box::new(ExecuteSendStep {
+        root: dir.path().to_path_buf(),
+        record_path: record_path.clone(),
+        approval_id,
+        document_id,
+    })];
+    runner.run(&only_execute).unwrap();
+
+    // Effect happened, record persisted — but state still pending.
+    assert!(record_path.exists());
+    assert_eq!(
+        store.load().unwrap().approvals[0].status,
+        ApprovalStatus::Pending
+    );
+    let persisted: SignedApprovalRecord =
+        serde_json::from_slice(&std::fs::read(&record_path).unwrap()).unwrap();
+
+    // The retry (the owner clicks approve again) resumes: the execute
+    // receipt replays, only the commit runs — no second capability, no
+    // second outbox write.
+    let workspace = store.decide(approval_id, true).unwrap();
+    assert_eq!(workspace.approvals[0].status, ApprovalStatus::Approved);
+    assert_eq!(
+        workspace.documents[0].status,
+        DocumentStatus::ApprovedPendingDelivery
+    );
+    let evidence = workspace.approvals[0].evidence.as_ref().unwrap();
+    assert_eq!(
+        evidence.capability_idempotency, persisted.capability_idempotency,
+        "the committed evidence must be the persisted record, not a re-execution"
+    );
+    let eml_count = std::fs::read_dir(dir.path().join("outbox"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().is_some_and(|x| x == "eml"))
+        .count();
+    assert_eq!(eml_count, 1, "exactly one composed message, no duplicates");
+
+    let report = store.integrity_check().unwrap();
+    assert!(
+        report.ok && report.findings.is_empty(),
+        "{:?}",
+        report.findings
+    );
+}
+
+#[test]
+fn durable_send_retries_after_crash_mid_execute() {
+    let (dir, store) = store();
+    store.set_venture("Acme", "Landing pages").unwrap();
+    let workspace = store
+        .add_customer("Dr. Tan", "dr.tan@example.com", "")
+        .unwrap();
+    let customer_id = workspace.customers[0].id;
+    let workspace = store
+        .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
+        .unwrap();
+    let document_id = workspace.documents[0].id;
+    let workspace = store.request_send(document_id).unwrap();
+    let approval_id = workspace.approvals[0].id;
+
+    // Simulate a crash mid-execute: the outbox file landed but neither the
+    // workflow checkpoint nor any state did — an orphan nothing references.
+    let broker = sovereign_effects::OutboxBroker::open(dir.path().join("outbox")).unwrap();
+    broker
+        .write_message(
+            &document_id.simple().to_string(),
+            sovereign_effects::EffectDataClass::Amber,
+            b"orphan from an interrupted attempt",
+        )
+        .unwrap();
+
+    // The retry pre-cleans the orphan and completes end-to-end.
+    let workspace = store.decide(approval_id, true).unwrap();
+    assert_eq!(workspace.approvals[0].status, ApprovalStatus::Approved);
+    let outbox = workspace.approvals[0]
+        .evidence
+        .as_ref()
+        .unwrap()
+        .outbox
+        .as_ref()
+        .unwrap();
+    let content = std::fs::read(dir.path().join("outbox").join(&outbox.relative_path)).unwrap();
+    assert!(
+        content.starts_with(b"From:"),
+        "the orphan was replaced by the real composed message"
+    );
+}
+
+#[test]
+fn commit_approve_decision_is_idempotent() {
+    let (dir, store) = store();
+    store.set_venture("Acme", "Landing pages").unwrap();
+    let workspace = store
+        .add_customer("Dr. Tan", "dr.tan@example.com", "")
+        .unwrap();
+    let customer_id = workspace.customers[0].id;
+    let workspace = store
+        .create_document(DocumentKind::Invoice, customer_id, Some(250_000), "en")
+        .unwrap();
+    let document_id = workspace.documents[0].id;
+    let workspace = store.request_send(document_id).unwrap();
+    let approval_id = workspace.approvals[0].id;
+    let workspace = store.decide(approval_id, true).unwrap();
+    let record = workspace.approvals[0].evidence.clone().unwrap();
+
+    let device = DeviceIdentity::load(&dir.path().join("device.json")).unwrap();
+    let before =
+        AuditLedger::load(&dir.path().join("ledger.json"), device.public_key_b64()).unwrap();
+    let events_before = before.events().len();
+
+    // A resumed commit step after the state already landed must change
+    // nothing and append nothing.
+    store
+        .commit_approve_decision(approval_id, document_id, record)
+        .unwrap();
+    let after =
+        AuditLedger::load(&dir.path().join("ledger.json"), device.public_key_b64()).unwrap();
+    assert_eq!(after.events().len(), events_before);
+    assert_eq!(
+        store.load().unwrap().approvals[0].status,
+        ApprovalStatus::Approved
+    );
+}
+
+#[test]
 fn compose_email_is_wellformed_and_injection_safe() {
     let venture = Venture {
         name: "Acme".into(),

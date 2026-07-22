@@ -1,4 +1,4 @@
-use super::compose::{compose_email, draft_outreach_note, render_document};
+use super::compose::{draft_outreach_note, render_document};
 use super::store::AuditEntry;
 use super::util::{clean_email, clean_optional_text, clean_text, kernel, now};
 use super::*;
@@ -300,83 +300,30 @@ impl Store {
             return Err(WorkspaceError::Invalid("approval already decided".into()));
         }
         let document_id = approval.document_id;
-        let document = workspace.document(document_id)?.clone();
+        workspace.document(document_id)?;
 
-        let evidence = if approve {
-            let customer = workspace
-                .customers
-                .iter()
-                .find(|customer| customer.id == document.customer_id);
-            let message = compose_email(workspace.venture.as_ref(), customer, &document);
-            Some(self.execute_signed_approval(&document, message.as_bytes())?)
-        } else {
-            None
-        };
+        if approve {
+            // The approved send runs as a durable, checkpointed workflow —
+            // compose, the signed kernel chain with its outbox effect, then
+            // the audit-first state commit — so a crash at any point resumes
+            // on the next attempt instead of losing or double-running the
+            // effect (see send_workflow.rs).
+            self.run_durable_send(approval_id, document_id)?;
+            return self.load();
+        }
 
         let approval = workspace.approval_mut(approval_id)?;
-        approval.status = if approve {
-            ApprovalStatus::Approved
-        } else {
-            ApprovalStatus::Rejected
-        };
+        approval.status = ApprovalStatus::Rejected;
         approval.decided_at = Some(now());
-        approval.evidence = evidence.clone();
-        let document_entry = workspace.document_mut(document_id)?;
-        document_entry.status = if approve {
-            DocumentStatus::ApprovedPendingDelivery
-        } else {
-            DocumentStatus::Rejected
-        };
-
-        // Every event of this decision lands on the chain in one durable
-        // write, then the state commits — audit-first, no partial record.
-        let resource = format!("document:{document_id}");
-        let mut events = Vec::new();
-        match &evidence {
-            Some(record) => {
-                events.push(AuditEntry {
-                    action: "approval.granted".into(),
-                    resource: resource.clone(),
-                    payload: serde_json::json!({
-                        "approval_id": approval_id,
-                        "signed_approval_id": record.approval_id,
-                        "evidence_digest": record.evidence_digest,
-                        "approver_key_id": record.approver_key_id,
-                    }),
-                });
-                events.push(AuditEntry {
-                    action: "capability.executed".into(),
-                    resource: resource.clone(),
-                    payload: serde_json::json!({
-                        "tool": "workspace.delivery/prepare",
-                        "component_digest": record.component_digest,
-                        "canonical_input_digest": record.canonical_input_digest,
-                        "idempotency": record.capability_idempotency,
-                        "exit_code": record.guest_exit_code,
-                        "fuel": record.fuel_consumed,
-                    }),
-                });
-                if let Some(outbox) = &record.outbox {
-                    events.push(AuditEntry {
-                        action: "effect.file_written".into(),
-                        resource: resource.clone(),
-                        payload: serde_json::json!({
-                            "outbox_path": outbox.relative_path,
-                            "content_sha256": outbox.content_sha256,
-                            "bytes": outbox.bytes,
-                        }),
-                    });
-                }
-            }
-            None => {
-                events.push(AuditEntry {
-                    action: "approval.rejected".into(),
-                    resource: resource.clone(),
-                    payload: serde_json::json!({ "approval_id": approval_id, "approved": false }),
-                });
-            }
-        }
-        self.commit(&workspace, events)?;
+        workspace.document_mut(document_id)?.status = DocumentStatus::Rejected;
+        self.commit(
+            &workspace,
+            vec![AuditEntry {
+                action: "approval.rejected".into(),
+                resource: format!("document:{document_id}"),
+                payload: serde_json::json!({ "approval_id": approval_id, "approved": false }),
+            }],
+        )?;
         Ok(workspace)
     }
 

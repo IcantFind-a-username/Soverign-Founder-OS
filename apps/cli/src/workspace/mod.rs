@@ -30,6 +30,7 @@ mod compose;
 mod kernel_exec;
 mod ops;
 mod reporting;
+mod send_workflow;
 mod store;
 mod types;
 mod util;
