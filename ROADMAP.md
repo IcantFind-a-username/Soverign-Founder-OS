@@ -54,13 +54,13 @@ Sovereign Runtime secure kernel
     - [x] Exact-bound Capability V2 and verified pure-compute Core Wasm path (process-local)
     - [x] Locally signed admission record and content-addressed artifact store
     - [x] Signed human approval evidence bound into Capability V2 (RFC 0003, process-local one-use)
-    - [ ] Verified executor requires a locally admitted artifact handle
-    - [ ] Killable compilation worker and trusted compiled cache
+    - [x] Verified executor requires a locally admitted artifact handle (digest-bound, refused before any token is consumed)
+    - [x] Killable, resource-limited compilation worker and trusted signed compiled cache (COSE cache record; poisoned entries quarantined before deserialize)
     - [ ] Component/WIT input ABI
   - [ ] Phase C: durable authorization and crash-safe evidence
     - [x] Durable Authority Store: atomic cross-process one-use consumption of tokens, approvals, and idempotency keys
     - [x] Crash-safe execution journal: durable intent before consume, terminal result after, Indeterminate recovery
-    - [ ] Crash-safe signed-audit intent/result ordering (ledger migration) and execution receipts
+    - [ ] Crash-safe signed-audit intent/result ordering: state mutations commit audit-first (all events in one durable ledger write before the state), with atomic vault/ledger replacement; a full ledger-migration receipt format remains
   - [ ] Phase D: reviewed WIT host interfaces and high-risk backend
     - [x] First host effect: audited, path-safe local outbox file-write broker (no network)
     - [ ] Reviewed WIT Component host interface and per-host-call authorization
@@ -68,7 +68,7 @@ Sovereign Runtime secure kernel
   - [x] Phase A: malicious Wasm import, loop, memory, table, ABI, and state tests
   - [x] Phase B foundation: manifest/artifact/input substitution, strict fields, trust state, V1/V2 separation, same-process replay, and backend downgrade tests
   - [x] Admission store: on-disk substitution, record forgery/cross-role, revoked-key, poisoned-entry, orphan-temp, and symlink tests
-  - [ ] Full Stage 1 authorization, replay, audit, and backend downgrade suite
+  - [ ] Full Stage 1 authorization, replay, audit, and backend downgrade suite (the live gauntlet now runs eleven attacks — replay, input substitution, admission binding, hostile compilation, cache poisoning, greedy manifest, runaway loop, red-data egress, approval bypass, audit tampering — plus crash-window and interrupted-operation tests; a consolidated named suite remains)
 
 **Exit criteria:** A malicious agent cannot read files or execute external actions without authorization.
 
