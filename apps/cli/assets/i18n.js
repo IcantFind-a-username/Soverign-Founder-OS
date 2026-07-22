@@ -112,7 +112,7 @@ const STRINGS = {
     sec_ledger: "Audit trail — signed hash chain (latest 25)",
     sec_gauntlet: "Security gauntlet — real attacks, run now, in memory",
     btn_run: "Run the gauntlet", btn_refresh: "Refresh state",
-    gauntlet_intro: "Nine attacks against the running kernel: token replay, input substitution, executing without the owner's admission, hostile in-host compilation, a manifest demanding host capabilities, an infinite-loop plugin, red-zone data exfiltration, approval bypass, and audit tampering. Nothing is mocked.",
+    gauntlet_intro: "Ten attacks against the running kernel: token replay, input substitution, executing without the owner's admission, hostile in-host compilation, cache poisoning, a manifest demanding host capabilities, an infinite-loop plugin, red-zone data exfiltration, approval bypass, and audit tampering. Nothing is mocked.",
     loading: "loading…",
     th_status: "Status", th_component: "Component", th_manifest: "Manifest", th_risk: "Risk", th_backend: "Backend", th_admitted_by: "Admitted by",
     th_time: "Time", th_actor: "Actor", th_action: "Action", th_resource: "Resource", th_hash: "Event hash",
@@ -242,7 +242,7 @@ const STRINGS = {
     sec_ledger: "审计记录 — 签名哈希链(最近 25 条)",
     sec_gauntlet: "安全闯关 — 真实攻击,即刻在内存中运行",
     btn_run: "运行安全闯关", btn_refresh: "刷新状态",
-    gauntlet_intro: "对运行中的内核发起九项攻击:令牌重放、输入替换、未经所有者准入的执行、宿主内恶意编译、清单越权申请、死循环插件、红区数据外泄、绕过审批、篡改审计。全部真实执行,绝无模拟。",
+    gauntlet_intro: "对运行中的内核发起十项攻击:令牌重放、输入替换、未经所有者准入的执行、宿主内恶意编译、缓存投毒、清单越权申请、死循环插件、红区数据外泄、绕过审批、篡改审计。全部真实执行,绝无模拟。",
     loading: "加载中…",
     th_status: "状态", th_component: "组件", th_manifest: "清单", th_risk: "风险等级", th_backend: "后端", th_admitted_by: "准入者",
     th_time: "时间", th_actor: "执行者", th_action: "操作", th_resource: "资源", th_hash: "事件哈希",
@@ -268,6 +268,7 @@ const STRINGS = {
       approval: { name: "无人工审批的高影响操作", detail: "没有审批证据就不签发任何能力令牌 — 运行时失败即关闭" },
       admission_binding: { name: "未经所有者准入的执行", detail: "出示他人工件的准入句柄被拒绝——代码未运行,令牌未消耗;执行只认所有者准入的那一个工件" },
       compile_isolation: { name: "宿主进程内的恶意编译", detail: "编译失败的工件在可终止、限内存的子进程中编译;失败被隔离在子进程内,宿主安然无恙" },
+      cache_poisoning: { name: "投毒已编译工件缓存", detail: "被篡改的缓存字节通不过签名记录校验,在任何反序列化之前即被隔离,并从源码透明重编译——绝不执行" },
       audit_tamper: { name: "篡改审计历史", detail: "改写一条已记录的操作即破坏签名哈希链并被检测到" }
     }
   }

@@ -39,10 +39,12 @@ use uuid::Uuid;
 pub(crate) const DEMO_PUBLISHER_SECRET: [u8; 32] = *b"sovereign-demo-publisher-key-01!";
 pub(crate) const DEMO_AUTHORITY_SECRET: [u8; 32] = *b"sovereign-demo-authority-key-01!";
 pub(crate) const DEMO_ADMISSION_SECRET: [u8; 32] = *b"sovereign-demo-admission-key-01!";
+pub(crate) const DEMO_CACHE_SECRET: [u8; 32] = *b"sovereign-demo-cache-signkey-01!";
 
 pub(crate) const PUBLISHER_ISSUER: &str = "plugin-studio.example";
 pub(crate) const AUTHORITY_ISSUER: &str = "sovereign-runtime.local";
 pub(crate) const ADMISSION_ISSUER: &str = "founder-device.local";
+pub(crate) const CACHE_ISSUER: &str = "founder-device.cache";
 pub(crate) const AUDIENCE: &str = "sovereign-runtime";
 pub(crate) const VENTURE: &str = "ven_acme_consulting";
 pub(crate) const SUBJECT: &str = "founder";

@@ -1,4 +1,5 @@
 mod compile_worker;
+mod compiled_cache;
 mod wasm;
 
 use std::collections::BTreeSet;
@@ -18,6 +19,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub use compile_worker::{run_compile_worker, CompileWorker};
+pub use compiled_cache::{CompiledCache, COMPILED_CACHE_ENGINE_IDENTITY};
 pub use wasm::{WasmExecutionResult, WasmSandbox, WasmSandboxLimits, DEFAULT_ENTRYPOINT};
 
 #[derive(Debug, Error)]
@@ -34,6 +36,10 @@ pub enum SandboxError {
     CompileWorkerFailed(String),
     #[error("the compilation worker exceeded its wall-clock deadline and was killed")]
     CompileWorkerTimeout,
+    #[error("the compiled cache is unavailable: {0}")]
+    CompiledCacheUnavailable(String),
+    #[error("a compiled cache entry failed verification and was quarantined: {0}")]
+    CompiledCachePoisoned(String),
     #[error("verified operation is not present in the exact structured allowlist")]
     VerifiedOperationNotAllowed { selector: OperationSelector },
     #[error("execution failed: {0}")]
@@ -241,6 +247,13 @@ impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
     /// compilation runs in-process (Phase A).
     pub fn with_compile_worker(mut self, worker: CompileWorker) -> Self {
         self.wasm = self.wasm.with_compile_worker(worker);
+        self
+    }
+
+    /// Verify-and-load compiled modules from a signed on-disk cache (RFC 0002
+    /// trusted compiled cache). Without it, every execution compiles.
+    pub fn with_compiled_cache(mut self, cache: CompiledCache) -> Self {
+        self.wasm = self.wasm.with_compiled_cache(cache);
         self
     }
 

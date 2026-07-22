@@ -8,7 +8,9 @@ use wasmtime::{Config, Engine, Instance, Module, ResourceLimiter, Store, Trap};
 use sovereign_artifact::PreparedInvocation;
 
 use crate::compile_worker::CompileWorker;
+use crate::compiled_cache::CompiledCache;
 use crate::{ExecutionRuntime, SandboxError};
+use sovereign_artifact::Digest;
 
 pub const DEFAULT_ENTRYPOINT: &str = "sovereign_run";
 
@@ -158,6 +160,9 @@ pub struct WasmSandbox {
     /// resource-limited child process instead of running in-process. `None`
     /// keeps the Phase A in-process behavior.
     compile_worker: Option<CompileWorker>,
+    /// When set, compiled modules are verified-and-loaded from (and, on a
+    /// miss, stored to) a signed on-disk cache.
+    compiled_cache: Option<CompiledCache>,
 }
 
 impl WasmSandbox {
@@ -201,6 +206,7 @@ impl WasmSandbox {
             epoch_worker: Some(epoch_worker),
             execution_gate: Mutex::new(()),
             compile_worker: None,
+            compiled_cache: None,
         })
     }
 
@@ -208,6 +214,13 @@ impl WasmSandbox {
     /// worker process. Without this, compilation runs in-process (Phase A).
     pub fn with_compile_worker(mut self, worker: CompileWorker) -> Self {
         self.compile_worker = Some(worker);
+        self
+    }
+
+    /// Verify-and-load compiled modules from a signed on-disk cache, storing
+    /// on a miss. Without it, every execution compiles from source.
+    pub fn with_compiled_cache(mut self, cache: CompiledCache) -> Self {
+        self.compiled_cache = Some(cache);
         self
     }
 
@@ -272,13 +285,29 @@ impl WasmSandbox {
             });
         }
 
-        // Compilation of untrusted bytes is the unbounded threat: route it
-        // through the killable, resource-limited worker when one is attached,
-        // otherwise compile in-process (Phase A).
-        let module = match &self.compile_worker {
-            Some(worker) => worker.compile(&self.engine, module_bytes)?,
-            None => Module::from_binary(&self.engine, module_bytes)
-                .map_err(|error| SandboxError::InvalidModule(error.to_string()))?,
+        // A verified cache hit skips compilation entirely; a miss compiles
+        // (out-of-process when a worker is attached, otherwise in-process) and
+        // stores the result under a freshly signed record for next time.
+        let component_digest = Digest::of_bytes(module_bytes);
+        let cached = self
+            .compiled_cache
+            .as_ref()
+            .and_then(|cache| cache.lookup(&self.engine, component_digest));
+        let module = match cached {
+            Some(module) => module,
+            None => {
+                let module = match &self.compile_worker {
+                    Some(worker) => worker.compile(&self.engine, module_bytes)?,
+                    None => Module::from_binary(&self.engine, module_bytes)
+                        .map_err(|error| SandboxError::InvalidModule(error.to_string()))?,
+                };
+                if let Some(cache) = &self.compiled_cache {
+                    if let Ok(serialized) = module.serialize() {
+                        let _ = cache.store(component_digest, &serialized);
+                    }
+                }
+                module
+            }
         };
         if let Some(import) = module.imports().next() {
             return Err(SandboxError::ForbiddenImport {

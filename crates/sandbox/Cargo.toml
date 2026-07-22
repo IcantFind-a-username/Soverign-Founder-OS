@@ -12,9 +12,11 @@ sovereign-artifact = { workspace = true }
 sovereign-capability = { workspace = true }
 sovereign-contracts = { workspace = true }
 sovereign-execution = { workspace = true }
+sovereign-identity = { workspace = true }
 sovereign-policy = { workspace = true }
 chrono = { workspace = true }
 serde_json = { workspace = true }
+serde_json_canonicalizer = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 wasmtime = { workspace = true }
@@ -23,7 +25,5 @@ wasmtime = { workspace = true }
 libc = "0.2"
 
 [dev-dependencies]
-serde_json_canonicalizer = { workspace = true }
-sovereign-identity = { workspace = true }
 wat = "1"
 tempfile = "3"

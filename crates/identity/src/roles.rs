@@ -25,11 +25,15 @@ pub enum AdmissionRole {}
 #[derive(Debug)]
 pub enum ApprovalRole {}
 
+#[derive(Debug)]
+pub enum CompiledCacheRole {}
+
 impl role_sealed::Sealed for PublisherRole {}
 impl role_sealed::Sealed for AuthorityRole {}
 impl role_sealed::Sealed for AuditRole {}
 impl role_sealed::Sealed for AdmissionRole {}
 impl role_sealed::Sealed for ApprovalRole {}
+impl role_sealed::Sealed for CompiledCacheRole {}
 
 impl SigningRole for PublisherRole {
     const NAME: &'static str = "publisher";
@@ -59,4 +63,10 @@ impl SigningRole for ApprovalRole {
     const NAME: &'static str = "approval";
     const CONTENT_TYPE: &'static str = "application/sovereign.approval+json;v=1";
     const EXTERNAL_AAD: &'static [u8] = b"sovereign:approval:v1";
+}
+
+impl SigningRole for CompiledCacheRole {
+    const NAME: &'static str = "compiled-cache";
+    const CONTENT_TYPE: &'static str = "application/sovereign.compiled-cache-record+json;v=1";
+    const EXTERNAL_AAD: &'static [u8] = b"sovereign:compiled-cache-record:v1";
 }

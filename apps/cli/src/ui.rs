@@ -28,12 +28,12 @@ use sovereign_capability::v2::{
 };
 use sovereign_contracts::{ActionRequest, AutomationLevel, DataClass};
 use sovereign_identity::{
-    AdmissionRole, AuthorityRole, DeviceIdentity, KeyValidity, PublisherRole, RoleTrustStore,
-    TypedSigner,
+    AdmissionRole, AuthorityRole, CompiledCacheRole, DeviceIdentity, KeyValidity, PublisherRole,
+    RoleTrustStore, TypedSigner,
 };
 use sovereign_policy::{AuthenticatedPolicyContextV2, PolicyAuthorizationV2, PolicyEngine};
 use sovereign_sandbox::{
-    CompileWorker, SandboxError, VerifiedExecutionRequest, VerifiedSandboxExecutor,
+    CompileWorker, CompiledCache, SandboxError, VerifiedExecutionRequest, VerifiedSandboxExecutor,
 };
 use tiny_http::{Header, Method, Response, Server};
 use uuid::Uuid;
@@ -606,6 +606,26 @@ fn compile_worker() -> CompileWorker {
     CompileWorker::new(program, vec![crate::COMPILE_WORKER_SUBCOMMAND.to_string()])
 }
 
+/// A trusted compiled cache signed and verified under a demo cache key.
+fn compiled_cache(
+    dir: &std::path::Path,
+    now_unix: i64,
+) -> Result<CompiledCache, Box<dyn std::error::Error>> {
+    let signer = TypedSigner::<CompiledCacheRole>::from_secret_bytes(
+        demo::CACHE_ISSUER,
+        demo::DEMO_CACHE_SECRET,
+    )?;
+    let mut trust = RoleTrustStore::<CompiledCacheRole>::new();
+    trust.trust_signer(&signer, KeyValidity::new(now_unix - 60, now_unix + 3_600)?)?;
+    Ok(CompiledCache::open(
+        dir,
+        signer,
+        trust,
+        demo::CACHE_ISSUER,
+        now_unix,
+    )?)
+}
+
 fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let now_unix = chrono::Utc::now().timestamp();
     let validity = KeyValidity::new(now_unix - 60, now_unix + 3_600)?;
@@ -643,12 +663,18 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
     let stress_selector = OperationSelector::new("demo.stress", "1.0.0", "spin")?;
     // The gauntlet runs as the real `sovereign` binary, so every module below
     // is compiled out-of-process in a killable, memory-limited worker (this
-    // binary re-executed with its hidden compile subcommand).
+    // binary re-executed with its hidden compile subcommand), and compiled
+    // results are cached under a signed record verified before any reuse.
+    let cache_dir = std::env::temp_dir().join(format!(
+        "sovereign-gauntlet-cache-{}",
+        Uuid::new_v4().simple()
+    ));
     let mut executor = VerifiedSandboxExecutor::new(
         vec![invoice_selector.clone(), stress_selector.clone()],
         validator,
     )?
-    .with_compile_worker(compile_worker());
+    .with_compile_worker(compile_worker())
+    .with_compiled_cache(compiled_cache(&cache_dir, now_unix)?);
 
     let invoice_component =
         demo::compile_wat(r#"(module (func (export "sovereign_run") (result i32) i32.const 0))"#);
@@ -795,6 +821,46 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         "an artifact that fails compilation was compiled in a killable, memory-limited worker; the failure was contained in the child and the host stayed up",
     );
 
+    // Cache poisoning: the baseline execution stored a compiled blob under a
+    // signed record. Flip the compiled bytes on disk, then run the same
+    // artifact again: the tampered entry must be refused before any unsafe
+    // deserialize, quarantined, and transparently recompiled — never executed.
+    let cache_poisoning = (|| -> Result<bool, Box<dyn std::error::Error>> {
+        let mut poisoned = false;
+        for entry in std::fs::read_dir(&cache_dir)?.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|x| x == "blob") {
+                let mut bytes = std::fs::read(&path)?;
+                if let Some(byte) = bytes.first_mut() {
+                    *byte ^= 0xff;
+                    std::fs::write(&path, &bytes)?;
+                    poisoned = true;
+                }
+            }
+        }
+        if !poisoned {
+            return Ok(false);
+        }
+        let (decision, idempotency) = gauntlet.decide(&invocation, AutomationLevel::L1Draft)?;
+        let token = gauntlet.issue(&invocation, &decision, idempotency)?;
+        let ran = executor
+            .execute(gauntlet.request(&token, &invocation, &invoice_admitted, &decision))
+            .is_ok();
+        let quarantined = std::fs::read_dir(cache_dir.join("quarantine"))
+            .map(|it| it.flatten().count())
+            .unwrap_or(0)
+            > 0;
+        Ok(ran && quarantined)
+    })()
+    .unwrap_or(false);
+    check(
+        &mut results,
+        "cache_poisoning",
+        "Poisoning the compiled-artifact cache",
+        cache_poisoning,
+        "a tampered cached blob failed its signed-record check, was quarantined before any deserialize, and the artifact was transparently recompiled from source",
+    );
+
     let mut greedy = demo::invoice_manifest_json(&gauntlet.publisher, &invoice_component);
     greedy["requested_host_capabilities"] = serde_json::json!(["filesystem.read"]);
     let greedy_result = gauntlet.verify(&greedy, &invoice_component);
@@ -890,6 +956,7 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
     // The admission store was a throwaway for this run; best-effort cleanup
     // (an early error above may leak one temp dir — harmless, OS-cleaned).
     let _ = std::fs::remove_dir_all(&admission_dir);
+    let _ = std::fs::remove_dir_all(&cache_dir);
 
     Ok(results)
 }
