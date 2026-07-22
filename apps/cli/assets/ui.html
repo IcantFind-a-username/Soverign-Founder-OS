@@ -222,6 +222,7 @@
   button.primary:hover { background: var(--accent-hover); box-shadow: var(--shadow-2); }
   button.primary:active { transform: translateY(1px); box-shadow: var(--shadow-1); }
   button.primary:disabled { opacity: .55; cursor: wait; transform: none; }
+  button.ghost:disabled, button.approve:disabled, button.reject:disabled { opacity: .55; cursor: wait; transform: none; pointer-events: none; }
   button.ghost {
     background: var(--panel); color: var(--ink-2);
     border: 1px solid var(--panel-edge); border-radius: var(--r-sm);
@@ -916,6 +917,15 @@ function toast(kind, message) {
   }, 4500);
 }
 
+// Double-submit protection: while an action is in flight its button is
+// disabled, so an impatient double-click can never create two documents or
+// race two decisions.
+async function withBusy(button, fn) {
+  if (button.disabled) return;
+  button.disabled = true;
+  try { await fn(); } finally { button.disabled = false; }
+}
+
 // Signed decisions are permanent: every irreversible action passes through
 // this dialog, which states exactly what will happen before it happens.
 function confirmAction(kind, subject) {
@@ -985,29 +995,29 @@ function renderWorkspace() {
       head.appendChild(badge(statusKind, t("status_" + d.status)));
       if (d.status === "draft") {
         const submit = el("button", "ghost small", t("ws_submit_send"));
-        submit.addEventListener("click", async () => {
+        submit.addEventListener("click", () => withBusy(submit, async () => {
           const result = await api("/api/workspace/request-send", { document_id: d.id });
           if (result.ok) { ws = result.workspace; renderWorkspace(); }
           else toast("bad", result.error);
-        });
+        }));
         head.appendChild(submit);
       }
       if (d.status === "approved_pending_delivery") {
         const delivered = el("button", "ghost small", t("ws_mark_delivered"));
-        delivered.addEventListener("click", async () => {
+        delivered.addEventListener("click", () => withBusy(delivered, async () => {
           if (!await confirmAction("deliver", d.title)) return;
           const result = await api("/api/workspace/confirm-delivery", { document_id: d.id });
           if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); toast("good", t("toast_delivered")(d.title)); }
           else toast("bad", result.error);
-        });
+        }));
         head.appendChild(delivered);
         const revoke = el("button", "ghost small", t("ws_revoke"));
-        revoke.addEventListener("click", async () => {
+        revoke.addEventListener("click", () => withBusy(revoke, async () => {
           if (!await confirmAction("revoke", d.title)) return;
           const result = await api("/api/workspace/revoke", { document_id: d.id });
           if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); toast("good", t("toast_revoked")(d.title)); }
           else toast("bad", result.error);
-        });
+        }));
         head.appendChild(revoke);
       }
       wrap.appendChild(head);
@@ -1052,8 +1062,8 @@ function renderWorkspace() {
           toast("bad", result.error);
         }
       };
-      approve.addEventListener("click", () => decide(true));
-      reject.addEventListener("click", () => decide(false));
+      approve.addEventListener("click", () => withBusy(approve, () => decide(true)));
+      reject.addEventListener("click", () => withBusy(reject, () => decide(false)));
       actions.appendChild(approve); actions.appendChild(reject);
       row.appendChild(actions);
       return row;
@@ -1358,9 +1368,9 @@ function renderCommandDecisions(decisions) {
     if (d.policy_reason) row.appendChild(el("div", "status-line", d.policy_reason));
     const bar = el("div", "toolbar");
     const approve = el("button", "primary small", t("cc_approve"));
-    approve.addEventListener("click", () => commandDecide(d.approval_id, true, d.document_title));
+    approve.addEventListener("click", () => withBusy(approve, () => commandDecide(d.approval_id, true, d.document_title)));
     const reject = el("button", "ghost small", t("cc_reject"));
-    reject.addEventListener("click", () => commandDecide(d.approval_id, false, d.document_title));
+    reject.addEventListener("click", () => withBusy(reject, () => commandDecide(d.approval_id, false, d.document_title)));
     bar.appendChild(approve);
     bar.appendChild(reject);
     row.appendChild(bar);
@@ -1425,9 +1435,9 @@ $("lang-zh").addEventListener("click", () => setLanguage("zh"));
 $("tab-command").addEventListener("click", () => setView("command"));
 $("tab-workspace").addEventListener("click", () => setView("workspace"));
 $("tab-security").addEventListener("click", () => setView("security"));
-$("v-save").addEventListener("click", saveVenture);
-$("c-add").addEventListener("click", addCustomer);
-$("d-assist").addEventListener("click", draftAssist);
+$("v-save").addEventListener("click", () => withBusy($("v-save"), saveVenture));
+$("c-add").addEventListener("click", () => withBusy($("c-add"), addCustomer));
+$("d-assist").addEventListener("click", () => withBusy($("d-assist"), draftAssist));
 $("assist-copy").addEventListener("click", () => {
   const text = $("assist-text").value;
   if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
@@ -1435,9 +1445,9 @@ $("assist-copy").addEventListener("click", () => {
   $("assist-copy").textContent = t("ws_assist_copied");
   setTimeout(() => { $("assist-copy").textContent = t("ws_assist_copy"); }, 1500);
 });
-$("verify-btn").addEventListener("click", verifyBackup);
-$("d-offer").addEventListener("click", () => createDocument("offer"));
-$("d-invoice").addEventListener("click", () => createDocument("invoice"));
+$("verify-btn").addEventListener("click", () => withBusy($("verify-btn"), verifyBackup));
+$("d-offer").addEventListener("click", () => withBusy($("d-offer"), () => createDocument("offer")));
+$("d-invoice").addEventListener("click", () => withBusy($("d-invoice"), () => createDocument("invoice")));
 $("run").addEventListener("click", runGauntlet);
 $("refresh").addEventListener("click", loadState);
 
