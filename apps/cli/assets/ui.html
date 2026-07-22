@@ -296,6 +296,24 @@
   .venture-line { font-size: 16px; font-weight: 650; letter-spacing: -.005em; }
   .venture-line .svc { color: var(--ink-2); font-weight: 450; }
 
+  /* ═══════════ Confirmation dialog ═══════════
+     Signed decisions are permanent; the UI slows the hand down and says
+     exactly what will happen before it happens. */
+  dialog#confirm-dialog {
+    margin: auto; /* the global margin reset would otherwise pin it top-left */
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--panel-edge); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-2); padding: 22px 24px; max-width: 460px; width: calc(100vw - 48px);
+  }
+  dialog#confirm-dialog::backdrop { background: rgb(10 10 8 / .45); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+  dialog#confirm-dialog[open] { animation: dialog-in .16s var(--ease); }
+  @keyframes dialog-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: none; } }
+  .dialog-title { font-size: 16px; font-weight: 700; letter-spacing: -.005em; }
+  .dialog-body { color: var(--ink-2); font-size: 13.5px; line-height: 1.65; margin-top: 9px; }
+  .dialog-seal { display: flex; align-items: center; gap: 7px; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--panel-edge); color: var(--bronze); font-size: 12px; font-weight: 650; }
+  .dialog-seal svg { width: 13px; height: 13px; flex-shrink: 0; }
+  .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
   footer {
     border-top: 1px solid var(--panel-edge);
     margin-top: 56px; padding: 18px clamp(16px, 4vw, 40px) 40px;
@@ -519,6 +537,21 @@
 
 </main>
 
+<dialog id="confirm-dialog">
+  <div class="dialog-title" id="confirm-title"></div>
+  <div class="dialog-body" id="confirm-body"></div>
+  <div class="dialog-seal">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 2.5 20.5 6v6.2c0 5-3.4 8.5-8.5 9.8-5.1-1.3-8.5-4.8-8.5-9.8V6L12 2.5Z"/>
+    </svg>
+    <span data-i18n="confirm_seal_note"></span>
+  </div>
+  <div class="dialog-actions">
+    <button class="ghost" id="confirm-cancel" data-i18n="confirm_cancel"></button>
+    <button class="primary" id="confirm-ok" data-i18n="confirm_ok"></button>
+  </div>
+</dialog>
+
 <footer>
   <div class="footer-inner">
     <p><strong data-i18n="footer_limits_title"></strong> <span data-i18n="footer_limits"></span></p>
@@ -564,6 +597,16 @@ const STRINGS = {
     cc_chain_verified: "verified", cc_chain_broken: "BROKEN", cc_chain_none: "none yet",
     cc_events: (n) => n + " events",
     cc_approve: "Approve", cc_reject: "Reject",
+    confirm_cancel: "Cancel", confirm_ok: "Confirm",
+    confirm_seal_note: "This decision is signed onto your audit chain and cannot be unsigned.",
+    confirm_approve_title: "Approve this send?",
+    confirm_approve_body: (s) => "Approving “" + s + "” signs your decision, authorizes one sandboxed execution, and composes the message as an .eml in your local outbox. Nothing is transmitted — but the signed approval is permanent. You can revoke the composed file afterwards.",
+    confirm_reject_title: "Reject this send?",
+    confirm_reject_body: (s) => "Rejecting “" + s + "” records a signed, permanent decision. The document stays rejected.",
+    confirm_revoke_title: "Revoke this send?",
+    confirm_revoke_body: (s) => "This deletes the composed .eml for “" + s + "” from your outbox and signs a revocation event. The original approval evidence is kept as history.",
+    confirm_deliver_title: "Mark as delivered?",
+    confirm_deliver_body: (s) => "This records your own attestation that you sent “" + s + "” to the customer yourself. The system sends nothing on your behalf.",
     ws_venture_title: "Your company",
     ws_company_name: "Company name", ws_service_desc: "What service do you sell?",
     ws_save: "Save", saved: "saved ✓",
@@ -680,6 +723,16 @@ const STRINGS = {
     cc_chain_verified: "已验证", cc_chain_broken: "已损坏", cc_chain_none: "暂无",
     cc_events: (n) => n + " 条事件",
     cc_approve: "批准", cc_reject: "拒绝",
+    confirm_cancel: "取消", confirm_ok: "确认",
+    confirm_seal_note: "该决定将被签名写入你的审计链,无法抹除签名。",
+    confirm_approve_title: "批准这次发送?",
+    confirm_approve_body: (s) => "批准“" + s + "”将签名记录你的决定,授权一次沙箱执行,并把消息生成为 .eml 存入本机发件箱。不会有任何内容被发出——但签名审批是永久的。之后你仍可撤销已生成的文件。",
+    confirm_reject_title: "拒绝这次发送?",
+    confirm_reject_body: (s) => "拒绝“" + s + "”将留下签名的永久记录,文档保持已拒绝状态。",
+    confirm_revoke_title: "撤销这次发送?",
+    confirm_revoke_body: (s) => "这将从发件箱删除“" + s + "”对应的 .eml,并签名记录一次撤销。原审批证据将作为历史保留。",
+    confirm_deliver_title: "标记为已送达?",
+    confirm_deliver_body: (s) => "这将记录你本人的声明:你已自行把“" + s + "”发送给客户。系统不会替你发送任何内容。",
     ws_venture_title: "你的公司",
     ws_company_name: "公司名称", ws_service_desc: "你提供什么服务?",
     ws_save: "保存", saved: "已保存 ✓",
@@ -824,6 +877,30 @@ async function api(path, body) {
   return response.json();
 }
 
+// Signed decisions are permanent: every irreversible action passes through
+// this dialog, which states exactly what will happen before it happens.
+function confirmAction(kind, subject) {
+  return new Promise((resolve) => {
+    const dialog = $("confirm-dialog");
+    $("confirm-title").textContent = t("confirm_" + kind + "_title");
+    $("confirm-body").textContent = t("confirm_" + kind + "_body")(subject || "");
+    const finish = (ok, close) => {
+      $("confirm-ok").removeEventListener("click", onOk);
+      $("confirm-cancel").removeEventListener("click", onCancel);
+      dialog.removeEventListener("cancel", onEsc);
+      if (close) dialog.close();
+      resolve(ok);
+    };
+    const onOk = () => finish(true, true);
+    const onCancel = () => finish(false, true);
+    const onEsc = () => finish(false, false);
+    $("confirm-ok").addEventListener("click", onOk);
+    $("confirm-cancel").addEventListener("click", onCancel);
+    dialog.addEventListener("cancel", onEsc);
+    dialog.showModal();
+  });
+}
+
 /* ─────────────── Workspace ─────────────── */
 
 async function loadWorkspace() {
@@ -879,6 +956,7 @@ function renderWorkspace() {
       if (d.status === "approved_pending_delivery") {
         const delivered = el("button", "ghost small", t("ws_mark_delivered"));
         delivered.addEventListener("click", async () => {
+          if (!await confirmAction("deliver", d.title)) return;
           const result = await api("/api/workspace/confirm-delivery", { document_id: d.id });
           if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
           else $("d-status").textContent = result.error;
@@ -886,6 +964,7 @@ function renderWorkspace() {
         head.appendChild(delivered);
         const revoke = el("button", "ghost small", t("ws_revoke"));
         revoke.addEventListener("click", async () => {
+          if (!await confirmAction("revoke", d.title)) return;
           const result = await api("/api/workspace/revoke", { document_id: d.id });
           if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
           else $("d-status").textContent = result.error;
@@ -924,6 +1003,7 @@ function renderWorkspace() {
       const approve = el("button", "approve", "✓ " + t("ws_approve"));
       const reject = el("button", "reject", "✗ " + t("ws_reject"));
       const decide = async (yes) => {
+        if (!await confirmAction(yes ? "approve" : "reject", doc ? doc.title : a.document_id)) return;
         const result = await api("/api/workspace/decide", { approval_id: a.id, approve: yes });
         if (result.ok) { ws = result.workspace; renderWorkspace(); loadState(); }
       };
@@ -1231,9 +1311,9 @@ function renderCommandDecisions(decisions) {
     if (d.policy_reason) row.appendChild(el("div", "status-line", d.policy_reason));
     const bar = el("div", "toolbar");
     const approve = el("button", "primary small", t("cc_approve"));
-    approve.addEventListener("click", () => commandDecide(d.approval_id, true));
+    approve.addEventListener("click", () => commandDecide(d.approval_id, true, d.document_title));
     const reject = el("button", "ghost small", t("cc_reject"));
-    reject.addEventListener("click", () => commandDecide(d.approval_id, false));
+    reject.addEventListener("click", () => commandDecide(d.approval_id, false, d.document_title));
     bar.appendChild(approve);
     bar.appendChild(reject);
     row.appendChild(bar);
@@ -1241,7 +1321,8 @@ function renderCommandDecisions(decisions) {
   }));
 }
 
-async function commandDecide(approvalId, approve) {
+async function commandDecide(approvalId, approve, title) {
+  if (!await confirmAction(approve ? "approve" : "reject", title || "")) return;
   const result = await api("/api/workspace/decide", { approval_id: approvalId, approve });
   if (result.ok) { ws = result.workspace; renderWorkspace(); }
   await loadCommandCenter();
