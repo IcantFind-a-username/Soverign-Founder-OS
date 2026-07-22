@@ -62,7 +62,17 @@ enum Commands {
     },
     /// Self-audit: reconcile local state against the signed audit chain
     Integrity,
+    /// Internal: compile one artifact from stdin in a killable worker process.
+    /// Not for direct use — spawned by the runtime to isolate untrusted
+    /// Wasmtime compilation. Reads digest(32)||module bytes, writes the
+    /// serialized module to stdout.
+    #[command(name = "__compile-worker", hide = true)]
+    CompileWorker,
 }
+
+/// The hidden subcommand name the runtime spawns for out-of-process
+/// compilation; kept in one place so the parent and the CLI agree.
+pub const COMPILE_WORKER_SUBCOMMAND: &str = "__compile-worker";
 
 fn data_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -82,6 +92,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::WorkflowDemo => cmd_workflow_demo()?,
         Commands::VerifyExport { path } => cmd_verify_export(&path)?,
         Commands::Integrity => cmd_integrity()?,
+        Commands::CompileWorker => {
+            let code =
+                sovereign_sandbox::run_compile_worker(std::io::stdin().lock(), std::io::stdout());
+            std::process::exit(i32::from(code));
+        }
     }
     Ok(())
 }

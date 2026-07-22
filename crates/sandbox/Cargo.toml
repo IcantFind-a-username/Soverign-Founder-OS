@@ -19,6 +19,9 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 wasmtime = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 serde_json_canonicalizer = { workspace = true }
 sovereign-identity = { workspace = true }

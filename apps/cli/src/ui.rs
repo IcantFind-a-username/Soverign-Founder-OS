@@ -32,7 +32,9 @@ use sovereign_identity::{
     TypedSigner,
 };
 use sovereign_policy::{AuthenticatedPolicyContextV2, PolicyAuthorizationV2, PolicyEngine};
-use sovereign_sandbox::{SandboxError, VerifiedExecutionRequest, VerifiedSandboxExecutor};
+use sovereign_sandbox::{
+    CompileWorker, SandboxError, VerifiedExecutionRequest, VerifiedSandboxExecutor,
+};
 use tiny_http::{Header, Method, Response, Server};
 use uuid::Uuid;
 
@@ -596,6 +598,14 @@ fn check(results: &mut Vec<serde_json::Value>, key: &str, name: &str, pass: bool
     results.push(serde_json::json!({ "key": key, "name": name, "pass": pass, "detail": detail }));
 }
 
+/// A compilation worker that re-executes this binary with the hidden compile
+/// subcommand, so untrusted Wasmtime compilation runs in a killable,
+/// memory-limited child process.
+fn compile_worker() -> CompileWorker {
+    let program = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("sovereign"));
+    CompileWorker::new(program, vec![crate::COMPILE_WORKER_SUBCOMMAND.to_string()])
+}
+
 fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let now_unix = chrono::Utc::now().timestamp();
     let validity = KeyValidity::new(now_unix - 60, now_unix + 3_600)?;
@@ -631,10 +641,14 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
 
     let invoice_selector = OperationSelector::new("invoice.tools", "1.0.0", "validate")?;
     let stress_selector = OperationSelector::new("demo.stress", "1.0.0", "spin")?;
+    // The gauntlet runs as the real `sovereign` binary, so every module below
+    // is compiled out-of-process in a killable, memory-limited worker (this
+    // binary re-executed with its hidden compile subcommand).
     let mut executor = VerifiedSandboxExecutor::new(
         vec![invoice_selector.clone(), stress_selector.clone()],
         validator,
-    )?;
+    )?
+    .with_compile_worker(compile_worker());
 
     let invoice_component =
         demo::compile_wat(r#"(module (func (export "sovereign_run") (result i32) i32.const 0))"#);
@@ -744,6 +758,41 @@ fn run_gauntlet() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> 
         "Executing without the owner's admission",
         admission_denied && honest_reuse,
         "an admitted handle for a different artifact was refused before any code ran or any token was consumed",
+    );
+
+    // Compilation isolation: a component whose bytes are well-formed enough to
+    // be admitted but fail Wasmtime compilation is compiled in the killable
+    // worker, so the failure is contained in the child and surfaces as a
+    // fail-closed CompileWorkerFailed in the parent — never a host crash.
+    let malformed_component: Vec<u8> = b"\0asm\x01\0\0\0\x7f\xff\xff\xff\xff\x0f".to_vec();
+    let compile_isolation = (|| -> Result<bool, Box<dyn std::error::Error>> {
+        let malformed_artifact = gauntlet.verify(
+            &demo::invoice_manifest_json(&gauntlet.publisher, &malformed_component),
+            &malformed_component,
+        )?;
+        let malformed_admitted =
+            admission_store.admit(&malformed_artifact, &admission_signer, &ArtifactClock)?;
+        let malformed_invocation = prepare_invoice(&malformed_artifact, 250_000)?;
+        let (bad_decision, bad_idempotency) =
+            gauntlet.decide(&malformed_invocation, AutomationLevel::L1Draft)?;
+        let bad_token = gauntlet.issue(&malformed_invocation, &bad_decision, bad_idempotency)?;
+        Ok(matches!(
+            executor.execute(gauntlet.request(
+                &bad_token,
+                &malformed_invocation,
+                &malformed_admitted,
+                &bad_decision,
+            )),
+            Err(SandboxError::CompileWorkerFailed(_) | SandboxError::CompileWorkerTimeout)
+        ))
+    })()
+    .unwrap_or(false);
+    check(
+        &mut results,
+        "compile_isolation",
+        "Hostile compilation in the host process",
+        compile_isolation,
+        "an artifact that fails compilation was compiled in a killable, memory-limited worker; the failure was contained in the child and the host stayed up",
     );
 
     let mut greedy = demo::invoice_manifest_json(&gauntlet.publisher, &invoice_component);

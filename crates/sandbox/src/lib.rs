@@ -1,3 +1,4 @@
+mod compile_worker;
 mod wasm;
 
 use std::collections::BTreeSet;
@@ -16,6 +17,7 @@ use sovereign_policy::PolicyAuthorizationV2;
 use thiserror::Error;
 use uuid::Uuid;
 
+pub use compile_worker::{run_compile_worker, CompileWorker};
 pub use wasm::{WasmExecutionResult, WasmSandbox, WasmSandboxLimits, DEFAULT_ENTRYPOINT};
 
 #[derive(Debug, Error)]
@@ -28,6 +30,10 @@ pub enum SandboxError {
     ToolNotAllowed(String),
     #[error("the presented admitted-artifact handle does not match this invocation's artifact")]
     ArtifactNotAdmitted,
+    #[error("the compilation worker failed: {0}")]
+    CompileWorkerFailed(String),
+    #[error("the compilation worker exceeded its wall-clock deadline and was killed")]
+    CompileWorkerTimeout,
     #[error("verified operation is not present in the exact structured allowlist")]
     VerifiedOperationNotAllowed { selector: OperationSelector },
     #[error("execution failed: {0}")]
@@ -227,6 +233,14 @@ impl<C: CapabilityV2Clock> VerifiedSandboxExecutor<C> {
     /// execution is denied. Without a journal, behavior is unchanged.
     pub fn with_execution_journal(mut self, journal: ExecutionJournal) -> Self {
         self.journal = Some(journal);
+        self
+    }
+
+    /// Route untrusted module compilation through a killable, resource-limited
+    /// worker process (RFC 0002 compilation threat surface). Without it,
+    /// compilation runs in-process (Phase A).
+    pub fn with_compile_worker(mut self, worker: CompileWorker) -> Self {
+        self.wasm = self.wasm.with_compile_worker(worker);
         self
     }
 

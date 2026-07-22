@@ -7,9 +7,34 @@ use wasmtime::{Config, Engine, Instance, Module, ResourceLimiter, Store, Trap};
 
 use sovereign_artifact::PreparedInvocation;
 
+use crate::compile_worker::CompileWorker;
 use crate::{ExecutionRuntime, SandboxError};
 
 pub const DEFAULT_ENTRYPOINT: &str = "sovereign_run";
+
+/// The compilation-relevant engine configuration: the wasm feature gates and
+/// Cranelift settings that determine how a module is compiled and serialized.
+/// Shared verbatim between the in-process engine and the out-of-process
+/// compile worker so a worker-serialized module deserializes in the parent.
+/// `max_wasm_stack` (a runtime trap threshold, not a compilation setting) is
+/// applied by the caller and does not affect serialization compatibility.
+pub(crate) fn compile_engine_config() -> Config {
+    let mut config = Config::new();
+    config
+        .consume_fuel(true)
+        .epoch_interruption(true)
+        .wasm_tail_call(false)
+        .wasm_custom_page_sizes(false)
+        .wasm_wide_arithmetic(false)
+        .wasm_simd(false)
+        .wasm_relaxed_simd(false)
+        .wasm_multi_memory(false)
+        .wasm_memory64(false)
+        .wasm_multi_value(false)
+        .wasm_extended_const(false)
+        .cranelift_nan_canonicalization(true);
+    config
+}
 const WASM_PAGE_BYTES: u128 = 64 * 1024;
 const MAX_DEADLINE_TICKS: u64 = 10_000;
 
@@ -129,27 +154,18 @@ pub struct WasmSandbox {
     epoch_stop: SyncSender<()>,
     epoch_worker: Option<JoinHandle<()>>,
     execution_gate: Mutex<()>,
+    /// When set, untrusted module compilation is delegated to a killable,
+    /// resource-limited child process instead of running in-process. `None`
+    /// keeps the Phase A in-process behavior.
+    compile_worker: Option<CompileWorker>,
 }
 
 impl WasmSandbox {
     pub fn new(limits: WasmSandboxLimits) -> Result<Self, SandboxError> {
         limits.validate()?;
 
-        let mut config = Config::new();
-        config
-            .consume_fuel(true)
-            .epoch_interruption(true)
-            .wasm_tail_call(false)
-            .wasm_custom_page_sizes(false)
-            .wasm_wide_arithmetic(false)
-            .wasm_simd(false)
-            .wasm_relaxed_simd(false)
-            .wasm_multi_memory(false)
-            .wasm_memory64(false)
-            .wasm_multi_value(false)
-            .wasm_extended_const(false)
-            .max_wasm_stack(limits.max_wasm_stack_bytes)
-            .cranelift_nan_canonicalization(true);
+        let mut config = compile_engine_config();
+        config.max_wasm_stack(limits.max_wasm_stack_bytes);
 
         let engine = Engine::new(&config)
             .map_err(|error| SandboxError::RuntimeInitialization(error.to_string()))?;
@@ -184,7 +200,15 @@ impl WasmSandbox {
             epoch_stop,
             epoch_worker: Some(epoch_worker),
             execution_gate: Mutex::new(()),
+            compile_worker: None,
         })
+    }
+
+    /// Route untrusted module compilation through a killable, resource-limited
+    /// worker process. Without this, compilation runs in-process (Phase A).
+    pub fn with_compile_worker(mut self, worker: CompileWorker) -> Self {
+        self.compile_worker = Some(worker);
+        self
     }
 
     pub fn execute(&self, module_bytes: &[u8]) -> Result<WasmExecutionResult, SandboxError> {
@@ -248,8 +272,14 @@ impl WasmSandbox {
             });
         }
 
-        let module = Module::from_binary(&self.engine, module_bytes)
-            .map_err(|error| SandboxError::InvalidModule(error.to_string()))?;
+        // Compilation of untrusted bytes is the unbounded threat: route it
+        // through the killable, resource-limited worker when one is attached,
+        // otherwise compile in-process (Phase A).
+        let module = match &self.compile_worker {
+            Some(worker) => worker.compile(&self.engine, module_bytes)?,
+            None => Module::from_binary(&self.engine, module_bytes)
+                .map_err(|error| SandboxError::InvalidModule(error.to_string()))?,
+        };
         if let Some(import) = module.imports().next() {
             return Err(SandboxError::ForbiddenImport {
                 module: import.module().to_string(),
