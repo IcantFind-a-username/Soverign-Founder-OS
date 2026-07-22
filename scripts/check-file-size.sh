@@ -7,11 +7,9 @@ set -euo pipefail
 LIMIT_RUST=1200
 LIMIT_FRONTEND=800
 
-# Pre-existing files already over the limit, tolerated at their current scale
-# with a tighter ceiling than they'd need to keep growing. Split, then remove.
-declare -A ALLOWLIST=(
-  ["crates/identity/src/lib.rs"]=1500
-)
+# Files tolerated above the limit at a pinned ceiling. Empty today — keep it
+# that way; split modules instead of adding entries.
+declare -A ALLOWLIST=()
 
 fail=0
 while IFS= read -r file; do
