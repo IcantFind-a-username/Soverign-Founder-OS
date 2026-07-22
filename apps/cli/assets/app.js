@@ -1,15 +1,42 @@
 "use strict";
+// Checked by `tsc --checkJs` in CI (see tsconfig.json) — types via JSDoc only,
+// zero build step, nothing here changes what ships.
+
+/**
+ * @typedef {{id: string, name: string, email: string, notes: string, created_at: number}} Customer
+ * @typedef {{relative_path: string, content_sha256: string, bytes: number}} OutboxWrite
+ * @typedef {{evidence_digest: string, approver_key_id: string, guest_exit_code: number, outbox: OutboxWrite|null}} Evidence
+ * @typedef {{id: string, document_id: string, status: string, action: string, policy_reason: string, requested_at: number, evidence: Evidence|null}} Approval
+ * @typedef {{id: string, customer_id: string, kind: string, title: string, body: string, status: string}} Doc
+ * @typedef {{name: string, service: string}} Venture
+ * @typedef {{version: number, venture: Venture|null, customers: Customer[], documents: Doc[], approvals: Approval[], disclosures: object[]}} Workspace
+ */
+
 let lang = localStorage.getItem("sovereign-ui-lang")
   || (navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
 let view = localStorage.getItem("sovereign-ui-view") || "command";
 let lastState = null;
 let lastGauntlet = null;
 let lastCommand = null;
+/** @type {Workspace|null} */
 let ws = null;
 
+/**
+ * Elements fetched by id are used as inputs, buttons, dialogs, and plain
+ * containers alike; `any` keeps call sites honest-by-test rather than
+ * drowning a zero-dependency codebase in casts.
+ * @returns {any}
+ */
 const $ = (id) => document.getElementById(id);
+/** @returns {any} i18n value — a string or a formatting function */
 const t = (key) => STRINGS[lang][key];
 
+/**
+ * @param {string} tag
+ * @param {string|null} [className]
+ * @param {string} [text]
+ * @returns {HTMLElement}
+ */
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -17,6 +44,10 @@ function el(tag, className, text) {
   return node;
 }
 
+/**
+ * @param {"good"|"bad"|"warn"|"neutral"} kind
+ * @param {string} label
+ */
 function badge(kind, label) {
   const marks = { good: "✓ ", bad: "✗ ", warn: "⧗ ", neutral: "" };
   return el("span", "badge " + kind, (marks[kind] || "") + label);
@@ -123,7 +154,7 @@ function renderWorkspace() {
   const select = $("d-customer");
   const selected = select.value;
   select.replaceChildren(...ws.customers.map(c => {
-    const option = el("option", null, c.name);
+    const option = /** @type {HTMLOptionElement} */ (el("option", null, c.name));
     option.value = c.id;
     return option;
   }));
@@ -544,7 +575,7 @@ function applyLanguage() {
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   $("lang-en").classList.toggle("active", lang === "en");
   $("lang-zh").classList.toggle("active", lang === "zh");
-  document.querySelectorAll("[data-i18n]").forEach(node => {
+  document.querySelectorAll("[data-i18n]").forEach((/** @type {HTMLElement} */ node) => {
     const value = t(node.dataset.i18n);
     if (typeof value === "string") node.textContent = value;
   });

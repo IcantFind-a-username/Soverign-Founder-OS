@@ -26,6 +26,23 @@ jobs:
       - name: Build CLI
         run: cargo build -p sovereign-cli --release --locked
 
+  frontend-types:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # Type-check the zero-dependency frontend: JSDoc types + `tsc --checkJs`
+      # (configured in apps/cli/assets/tsconfig.json). Check-only — noEmit, so
+      # nothing produced here ever reaches the shipped binary. The TypeScript
+      # compiler is a single exact-pinned package with no transitive
+      # dependencies, fetched only into this ephemeral runner with install
+      # scripts disabled; the runner's preinstalled Node is used directly.
+      - name: Type-check frontend (tsc --checkJs, no emit)
+        env:
+          npm_config_ignore_scripts: "true"
+        run: npx -y -p typescript@5.5.4 tsc -p apps/cli/assets/tsconfig.json
+
   security:
     runs-on: ubuntu-latest
     permissions:
